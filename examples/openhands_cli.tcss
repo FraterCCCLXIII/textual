@@ -157,6 +157,19 @@ Screen {
     color: $text;
 }
 
+#tips-drawer {
+    display: none;
+    margin: 0 1 0 1;
+    border: round $panel;
+    background: $surface;
+    color: $text;
+    padding: 1 2;
+}
+
+#tips-drawer.-visible {
+    display: block;
+}
+
 #slash-menu {
     display: none;
     margin: 0 1 1 1;

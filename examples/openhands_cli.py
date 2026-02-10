@@ -211,7 +211,8 @@ class MainShellScreen(Screen):
         ("ctrl+n", "new_thread", "New Thread"),
         ("ctrl+r", "cycle_repo_source", "Repo"),
         ("ctrl+m", "cycle_model", "Model"),
-        ("ctrl+d", "app.toggle_dark", "Theme"),
+        ("ctrl+d", "toggle_tips_drawer", "Tips"),
+        ("ctrl+t", "app.toggle_dark", "Theme"),
     ]
 
     def compose(self) -> ComposeResult:
@@ -227,6 +228,7 @@ class MainShellScreen(Screen):
                     yield Static(id="todo-list-card")
                     with VerticalScroll(id="chat-view"):
                         pass
+            yield Static(id="tips-drawer")
             yield Input(
                 placeholder="Type a request (or @path/to/file), then press Enter",
                 id="chat-input",
@@ -238,6 +240,7 @@ class MainShellScreen(Screen):
         self.query_one("#chat-view", VerticalScroll).anchor()
         self.slash_matches: list[SlashCommand] = []
         self.slash_selected_index = 0
+        self.tips_visible = True
         await self.sync_from_app_state()
         self.query_one("#chat-input", Input).focus()
         self._hide_slash_menu()
@@ -247,6 +250,7 @@ class MainShellScreen(Screen):
         self._render_thread_list()
         self._render_status_line()
         self._render_todo_list()
+        self._render_tips_drawer()
         await self._render_active_thread()
 
     def _render_onboarding_banner(self) -> None:
@@ -291,6 +295,22 @@ class MainShellScreen(Screen):
         assert isinstance(app, OpenHandsCLIApp)
         card = self.query_one("#todo-list-card", Static)
         card.update(app.build_todo_render())
+
+    def _render_tips_drawer(self) -> None:
+        drawer = self.query_one("#tips-drawer", Static)
+        if not self.tips_visible:
+            drawer.update("")
+            drawer.remove_class("-visible")
+            return
+
+        tips = (
+            "Tips (Ctrl-D to dismiss)\n\n"
+            "• Use /help or / to browse available commands.\n\n"
+            "• Use Ctrl+P for command lookup and fuzzy actions.\n\n"
+            "• Mention a file path like @src/app.py to scope analysis."
+        )
+        drawer.update(tips)
+        drawer.add_class("-visible")
 
     async def _render_active_thread(self) -> None:
         app = self.app
@@ -393,6 +413,10 @@ class MainShellScreen(Screen):
         app.cycle_model()
         await self.sync_from_app_state()
         self.notify(f"Model switched to {app.model_name}.")
+
+    async def action_toggle_tips_drawer(self) -> None:
+        self.tips_visible = not self.tips_visible
+        self._render_tips_drawer()
 
     async def _run_slash_command(self, raw_text: str) -> bool:
         app = self.app
