@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from functools import partial
+from pathlib import Path
+from uuid import uuid4
 
 from textual import on
 from textual.app import App, ComposeResult
@@ -40,6 +42,18 @@ class ConversationThread:
     messages: list[ChatMessage] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class SlashCommand:
+    name: str
+    description: str
+
+
+@dataclass
+class OnboardingOption:
+    label: str
+    detail: str = ""
+
+
 class OpenHandsCommandProvider(Provider):
     """Mock commands for command lookup in the prototype."""
 
@@ -59,33 +73,124 @@ class OpenHandsCommandProvider(Provider):
                 )
 
 
-class StartupScreen(Screen):
-    """Startup / onboarding screen."""
+class OnboardingScreen(Screen):
+    """Startup + onboarding flow screen."""
 
     BINDINGS = [
-        ("enter", "start_prototype", "Start"),
-        ("space", "start_prototype", "Start"),
+        ("up,k", "cursor_up", "Up"),
+        ("down,j", "cursor_down", "Down"),
+        ("enter", "confirm", "Select"),
+        ("space", "confirm", "Select"),
         ("ctrl+p", "app.command_palette", "Commands"),
     ]
 
+    STEP_ONE_OPTIONS = [
+        OnboardingOption(
+            "Connect to OpenHands ($20 free credits for new users)",
+            "Available models: claude-sonnet-4, gpt-5, gemini-2.5-pro, and more",
+        ),
+        OnboardingOption(
+            "Use your own LLM Provider",
+            "Available providers: anthropic, openai, mistral",
+        ),
+        OnboardingOption("Exit", "See you later!"),
+    ]
+
+    STEP_TWO_OPTIONS = [
+        OnboardingOption("Yes, proceed (Y)"),
+        OnboardingOption("No, exit (N)"),
+    ]
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.step = 1
+        self.selected_index = 0
+
     def compose(self) -> ComposeResult:
-        tips = (
-            "Tips for getting started:\n"
-            "1. Press Enter to open the interactive shell.\n"
-            "2. Use Ctrl+P to open command lookup.\n"
-            "3. Type messages to simulate software-building tasks.\n"
-            "4. Switch between local and cloud repository contexts."
-        )
         with Container(id="startup-shell"):
             yield Static(LOGO, id="startup-logo")
-            yield Static("Welcome to OpenHands CLI (design prototype)", id="startup-title")
-            yield Static(tips, id="startup-tips")
-            yield Static("Press Enter to start", id="startup-call-to-action")
+            yield Static("OpenHands CLI v0.57.0", id="startup-version")
+            yield Static("No settings found — let's set you up!", id="startup-pill")
+            yield Static(id="onboarding-main-card")
+            yield Static(id="onboarding-choice-card")
+            yield Static("Use ↑/↓ to navigate and Enter to continue", id="startup-call-to-action")
 
-    def action_start_prototype(self) -> None:
+    def on_mount(self) -> None:
+        self._render_step()
+
+    def action_cursor_up(self) -> None:
+        options = self.STEP_ONE_OPTIONS if self.step == 1 else self.STEP_TWO_OPTIONS
+        self.selected_index = (self.selected_index - 1) % len(options)
+        self._render_step()
+
+    def action_cursor_down(self) -> None:
+        options = self.STEP_ONE_OPTIONS if self.step == 1 else self.STEP_TWO_OPTIONS
+        self.selected_index = (self.selected_index + 1) % len(options)
+        self._render_step()
+
+    def action_confirm(self) -> None:
         app = self.app
         assert isinstance(app, OpenHandsCLIApp)
+        if self.step == 1:
+            if self.selected_index == 2:
+                app.exit()
+                return
+            app.provider_choice = (
+                "OpenHands" if self.selected_index == 0 else "Custom Provider"
+            )
+            self.step = 2
+            self.selected_index = 0
+            self.query_one("#startup-pill", Static).update("Step 1 complete")
+            self._render_step()
+            return
+
+        if self.selected_index == 1:
+            app.exit()
+            return
+
+        app.complete_onboarding()
+        self.query_one("#startup-pill", Static).update("All set up!")
         app.show_main_screen()
+
+    def _render_step(self) -> None:
+        if self.step == 1:
+            self._render_step_one()
+        else:
+            self._render_step_two()
+
+    def _render_step_one(self) -> None:
+        card = (
+            "┌ Step 1 " + "─" * 56 + "\n\n"
+            "Select your LLM Provider\n\n"
+            f"{self._format_options(self.STEP_ONE_OPTIONS)}"
+        )
+        self.query_one("#onboarding-main-card", Static).update(card)
+        self.query_one("#onboarding-choice-card", Static).update("")
+        self.query_one("#onboarding-choice-card", Static).remove_class("-visible")
+
+    def _render_step_two(self) -> None:
+        cwd = str(Path.cwd())
+        main_card = (
+            "┌ Step 2 " + "─" * 56 + "\n\n"
+            "Do you trust the files in this folder?\n\n"
+            f"{cwd}\n\n"
+            "OpenHands may read and execute files in this folder with your permission."
+        )
+        choice_card = "Do you wish to continue?\n\n" + self._format_options(
+            self.STEP_TWO_OPTIONS
+        )
+        self.query_one("#onboarding-main-card", Static).update(main_card)
+        self.query_one("#onboarding-choice-card", Static).update(choice_card)
+        self.query_one("#onboarding-choice-card", Static).add_class("-visible")
+
+    def _format_options(self, options: list[OnboardingOption]) -> str:
+        lines: list[str] = []
+        for index, option in enumerate(options, start=1):
+            prefix = ">" if (index - 1) == self.selected_index else " "
+            lines.append(f"{prefix} {index}. {option.label}")
+            if option.detail:
+                lines.append(f"   {option.detail}")
+        return "\n".join(lines)
 
 
 class MainShellScreen(Screen):
@@ -101,6 +206,7 @@ class MainShellScreen(Screen):
 
     def compose(self) -> ComposeResult:
         with Container(id="main-shell"):
+            yield Static(id="onboarding-banner")
             yield Static(id="status-line")
             with Horizontal(id="workspace"):
                 with Vertical(id="thread-panel"):
@@ -114,17 +220,36 @@ class MainShellScreen(Screen):
                 placeholder="Type a request (or @path/to/file), then press Enter",
                 id="chat-input",
             )
+            yield Static(id="slash-menu")
             yield Footer()
 
     async def on_mount(self) -> None:
         self.query_one("#chat-view", VerticalScroll).anchor()
+        self.slash_matches: list[SlashCommand] = []
+        self.slash_selected_index = 0
         await self.sync_from_app_state()
         self.query_one("#chat-input", Input).focus()
+        self._hide_slash_menu()
 
     async def sync_from_app_state(self) -> None:
+        self._render_onboarding_banner()
         self._render_thread_list()
         self._render_status_line()
         await self._render_active_thread()
+
+    def _render_onboarding_banner(self) -> None:
+        app = self.app
+        assert isinstance(app, OpenHandsCLIApp)
+        banner = self.query_one("#onboarding-banner", Static)
+        if app.onboarding_complete and app.conversation_id:
+            banner.update(
+                f"Initialized conversation {app.conversation_id} "
+                f"| Provider: {app.provider_choice or 'OpenHands'}"
+            )
+            banner.add_class("-visible")
+        else:
+            banner.update("")
+            banner.remove_class("-visible")
 
     def _render_thread_list(self) -> None:
         app = self.app
@@ -159,12 +284,7 @@ class MainShellScreen(Screen):
         chat_view.scroll_end(animate=False)
 
     def _make_bubble(self, message: ChatMessage) -> Markdown:
-        widget = Markdown(message.content, classes=f"bubble {message.role}")
-        if message.role == "assistant":
-            widget.border_title = "OpenHands"
-        elif message.role == "user":
-            widget.border_title = "You"
-        return widget
+        return Markdown(message.content, classes=f"chat-line {message.role}")
 
     @on(OptionList.OptionSelected, "#threads")
     async def on_thread_selected(self, event: OptionList.OptionSelected) -> None:
@@ -183,7 +303,16 @@ class MainShellScreen(Screen):
 
         app = self.app
         assert isinstance(app, OpenHandsCLIApp)
+
+        if content.startswith("/"):
+            handled = await self._run_slash_command(content)
+            if handled:
+                event.input.clear()
+                self._hide_slash_menu()
+            return
+
         event.input.clear()
+        self._hide_slash_menu()
 
         user_message = ChatMessage("user", content)
         app.active_thread.messages.append(user_message)
@@ -192,6 +321,35 @@ class MainShellScreen(Screen):
         app.active_thread.messages.append(assistant_message)
 
         await self.sync_from_app_state()
+
+    @on(Input.Changed, "#chat-input")
+    def on_chat_input_changed(self, event: Input.Changed) -> None:
+        value = event.value.strip()
+        if not value.startswith("/"):
+            self._hide_slash_menu()
+            return
+
+        app = self.app
+        assert isinstance(app, OpenHandsCLIApp)
+        query = value[1:].strip().lower()
+        commands = app.slash_commands
+        matches = [
+            command
+            for command in commands
+            if not query
+            or command.name.startswith(query)
+            or query in command.description.lower()
+        ]
+
+        if not matches:
+            self._show_slash_menu("No commands found")
+            self.slash_matches = []
+            self.slash_selected_index = 0
+            return
+
+        self.slash_matches = matches
+        self.slash_selected_index = 0
+        self._render_slash_menu()
 
     async def action_new_thread(self) -> None:
         app = self.app
@@ -214,6 +372,82 @@ class MainShellScreen(Screen):
         await self.sync_from_app_state()
         self.notify(f"Model switched to {app.model_name}.")
 
+    async def _run_slash_command(self, raw_text: str) -> bool:
+        app = self.app
+        assert isinstance(app, OpenHandsCLIApp)
+
+        command_name = raw_text.split()[0][1:].lower()
+        if not command_name:
+            self._render_slash_menu()
+            return True
+
+        if command_name in {"$", "credits"}:
+            self.notify("Credits usage: 18% this session (mock)")
+            app.active_thread.messages.append(
+                ChatMessage("assistant", "Current credit use: **18%** (mock).")
+            )
+        elif command_name == "help":
+            command_help = "\n".join(
+                f"- `/{command.name}` - {command.description}"
+                for command in app.slash_commands
+            )
+            app.active_thread.messages.append(
+                ChatMessage("assistant", f"Available slash commands:\n{command_help}")
+            )
+        elif command_name == "init":
+            app.create_thread()
+            self.notify("Initialized a new repository context (mock).")
+        elif command_name == "status":
+            app.active_thread.messages.append(
+                ChatMessage(
+                    "assistant",
+                    "Session status:\n"
+                    f"- Repo source: `{app.repo_source}`\n"
+                    f"- Model: `{app.model_name}`\n"
+                    f"- Threads: `{len(app.threads)}`",
+                )
+            )
+        elif command_name == "repo":
+            app.cycle_repo_source()
+            self.notify(f"Repository source set to {app.repo_source}.")
+        elif command_name == "model":
+            app.cycle_model()
+            self.notify(f"Model switched to {app.model_name}.")
+        elif command_name == "new":
+            app.create_thread()
+            self.notify("Created a new conversation thread.")
+        elif command_name == "exit":
+            app.exit()
+            return True
+        else:
+            self.notify(f"Unknown command: /{command_name}")
+            return True
+
+        await self.sync_from_app_state()
+        return True
+
+    def _render_slash_menu(self) -> None:
+        if not self.slash_matches:
+            self._hide_slash_menu()
+            return
+
+        lines: list[str] = []
+        for index, command in enumerate(self.slash_matches):
+            prefix = "▸" if index == self.slash_selected_index else " "
+            lines.append(f"{prefix} /{command.name} - {command.description}")
+        lines.append(f"▾ {self.slash_selected_index + 1}/{len(self.slash_matches)}")
+        self._show_slash_menu("\n".join(lines))
+
+    def _show_slash_menu(self, content: str) -> None:
+        menu = self.query_one("#slash-menu", Static)
+        menu.update(content)
+        menu.add_class("-visible")
+
+    def _hide_slash_menu(self) -> None:
+        menu = self.query_one("#slash-menu", Static)
+        menu.update("")
+        menu.remove_class("-visible")
+
 
 class OpenHandsCLIApp(App):
     """Interactive OpenHands CLI prototype with no external dependencies."""
@@ -223,7 +457,7 @@ class OpenHandsCLIApp(App):
     SUB_TITLE = "Clickable design prototype"
 
     COMMANDS = App.COMMANDS | {OpenHandsCommandProvider}
-    SCREENS = {"startup": StartupScreen, "main": MainShellScreen}
+    SCREENS = {"startup": OnboardingScreen, "main": MainShellScreen}
 
     def __init__(self) -> None:
         super().__init__()
@@ -234,6 +468,9 @@ class OpenHandsCLIApp(App):
         self.thread_count = 0
         self.threads = self._build_seed_threads()
         self.active_thread_id = next(iter(self.threads))
+        self.onboarding_complete = False
+        self.provider_choice: str | None = None
+        self.conversation_id: str | None = None
 
     @property
     def repo_source(self) -> str:
@@ -267,14 +504,39 @@ class OpenHandsCLIApp(App):
             ("go_startup", "Return to startup screen", "Navigate back to splash/start page"),
         ]
 
+    @property
+    def slash_commands(self) -> list[SlashCommand]:
+        return [
+            SlashCommand("$", "Show current credit use"),
+            SlashCommand("exit", "Exit the application"),
+            SlashCommand("help", "Display available commands"),
+            SlashCommand("init", "Initialize a new repository"),
+            SlashCommand("status", "Display conversation details and usage metrics"),
+            SlashCommand("repo", "Switch repository source local/cloud"),
+            SlashCommand("model", "Switch active model"),
+            SlashCommand("new", "Create a new conversation thread"),
+        ]
+
     def on_mount(self) -> None:
         self.push_screen("startup")
 
     def show_main_screen(self) -> None:
-        if isinstance(self.screen, StartupScreen):
+        if isinstance(self.screen, OnboardingScreen):
             self.pop_screen()
         if not isinstance(self.screen, MainShellScreen):
             self.push_screen("main")
+
+    def complete_onboarding(self) -> None:
+        self.onboarding_complete = True
+        self.conversation_id = str(uuid4())
+        self.active_thread.messages.insert(
+            0,
+            ChatMessage(
+                "assistant",
+                f"Initialized conversation `{self.conversation_id}`.\n"
+                f"Provider: **{self.provider_choice or 'OpenHands'}**.",
+            ),
+        )
 
     def set_active_thread(self, thread_id: str) -> None:
         if thread_id in self.threads:
@@ -352,7 +614,7 @@ class OpenHandsCLIApp(App):
             self.active_thread_id = "thread-onboarding"
             self.notify("Loaded example conversation thread.")
         elif command_id == "go_startup":
-            if not isinstance(self.screen, StartupScreen):
+            if not isinstance(self.screen, OnboardingScreen):
                 self.push_screen("startup")
             return
 

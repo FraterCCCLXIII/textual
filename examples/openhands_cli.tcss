@@ -6,7 +6,7 @@ Screen {
 #startup-shell {
     width: 1fr;
     height: 1fr;
-    align: center middle;
+    align: center top;
     layout: vertical;
     padding: 2 4;
     background: $surface;
@@ -16,17 +16,26 @@ Screen {
     width: auto;
     color: $warning;
     text-style: bold;
+    margin-bottom: 0;
+}
+
+#startup-version {
+    color: $text;
     margin-bottom: 1;
 }
 
-#startup-title {
-    color: $accent;
-    text-style: bold;
+#startup-pill {
+    width: auto;
+    border: round $panel;
+    color: $text;
+    background: $surface-lighten-1;
+    padding: 0 1;
     margin-bottom: 1;
 }
 
-#startup-tips {
-    width: 80;
+#onboarding-main-card {
+    width: 96;
+    max-width: 98%;
     max-width: 95%;
     border: tall $panel;
     background: $surface;
@@ -35,15 +44,41 @@ Screen {
     margin-bottom: 1;
 }
 
+#onboarding-choice-card {
+    display: none;
+    width: 40;
+    border: round $panel;
+    background: $surface;
+    color: $text;
+    padding: 1 2;
+    margin-bottom: 1;
+}
+
+#onboarding-choice-card.-visible {
+    display: block;
+}
+
 #startup-call-to-action {
     color: $success;
-    text-style: bold;
 }
 
 #main-shell {
     width: 1fr;
     height: 1fr;
     layout: vertical;
+}
+
+#onboarding-banner {
+    display: none;
+    height: auto;
+    border-bottom: solid $panel;
+    color: $primary-lighten-2;
+    background: $surface-lighten-1;
+    padding: 0 1;
+}
+
+#onboarding-banner.-visible {
+    display: block;
 }
 
 #status-line {
@@ -93,22 +128,17 @@ Screen {
     padding: 0 1;
 }
 
-.bubble {
+.chat-line {
     margin: 1 0;
-    padding: 0 1;
-    border: round $panel;
+    padding: 0;
 }
 
 .assistant {
-    margin-right: 10;
-    border: round $success;
-    background: $success 10%;
+    color: $text;
 }
 
 .user {
-    margin-left: 10;
-    border: round $primary;
-    background: $primary 12%;
+    color: $text;
 }
 
 #chat-input {
@@ -116,6 +146,20 @@ Screen {
     border: round $accent;
     background: $surface-lighten-1;
     color: $text;
+}
+
+#slash-menu {
+    display: none;
+    margin: 0 1 1 1;
+    border: round $panel;
+    background: $surface-lighten-1;
+    color: $text;
+    padding: 1 2;
+    text-style: bold;
+}
+
+#slash-menu.-visible {
+    display: block;
 }
 
 Footer {
