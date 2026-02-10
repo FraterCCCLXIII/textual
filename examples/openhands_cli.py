@@ -56,6 +56,14 @@ class OnboardingOption:
     detail: str = ""
 
 
+@dataclass
+class TodoItem:
+    title: str
+    todo_id: str
+    status: str
+    reason: str = ""
+
+
 class OpenHandsCommandProvider(Provider):
     """Mock commands for command lookup in the prototype."""
 
@@ -216,6 +224,7 @@ class MainShellScreen(Screen):
                     yield OptionList(id="threads", compact=True)
                 with Vertical(id="chat-panel"):
                     yield Static("Active Conversation", classes="panel-title")
+                    yield Static(id="todo-list-card")
                     with VerticalScroll(id="chat-view"):
                         pass
             yield Input(
@@ -237,6 +246,7 @@ class MainShellScreen(Screen):
         self._render_onboarding_banner()
         self._render_thread_list()
         self._render_status_line()
+        self._render_todo_list()
         await self._render_active_thread()
 
     def _render_onboarding_banner(self) -> None:
@@ -275,6 +285,12 @@ class MainShellScreen(Screen):
             f"Model: {app.model_name}  |  "
             f"Thread: {thread.title}"
         )
+
+    def _render_todo_list(self) -> None:
+        app = self.app
+        assert isinstance(app, OpenHandsCLIApp)
+        card = self.query_one("#todo-list-card", Static)
+        card.update(app.build_todo_render())
 
     async def _render_active_thread(self) -> None:
         app = self.app
@@ -325,6 +341,7 @@ class MainShellScreen(Screen):
         await asyncio.sleep(0.9)
 
         processing_message.content = app.build_mock_response(content)
+        app.advance_todo_progress()
         await self.sync_from_app_state()
 
     @on(Input.Changed, "#chat-input")
@@ -409,8 +426,13 @@ class MainShellScreen(Screen):
                     "Session status:\n"
                     f"- Repo source: `{app.repo_source}`\n"
                     f"- Model: `{app.model_name}`\n"
-                    f"- Threads: `{len(app.threads)}`",
+                    f"- Threads: `{len(app.threads)}`\n"
+                    f"- Todo: `{app.todo_summary()}`",
                 )
+            )
+        elif command_name == "todo":
+            app.active_thread.messages.append(
+                ChatMessage("assistant", f"Task list summary: {app.todo_summary()}")
             )
         elif command_name == "repo":
             app.cycle_repo_source()
@@ -476,6 +498,7 @@ class OpenHandsCLIApp(App):
         self.onboarding_complete = False
         self.provider_choice: str | None = None
         self.conversation_id: str | None = None
+        self.todo_items = self._build_seed_todos()
 
     @property
     def repo_source(self) -> str:
@@ -517,6 +540,7 @@ class OpenHandsCLIApp(App):
             SlashCommand("help", "Display available commands"),
             SlashCommand("init", "Initialize a new repository"),
             SlashCommand("status", "Display conversation details and usage metrics"),
+            SlashCommand("todo", "Show task list summary"),
             SlashCommand("repo", "Switch repository source local/cloud"),
             SlashCommand("model", "Switch active model"),
             SlashCommand("new", "Create a new conversation thread"),
@@ -542,6 +566,50 @@ class OpenHandsCLIApp(App):
                 f"Provider: **{self.provider_choice or 'OpenHands'}**.",
             ),
         )
+
+    def build_todo_render(self) -> str:
+        lines = [
+            "Agent Updated Plan",
+            f"Task List ({len(self.todo_items)} items)",
+            "",
+        ]
+        for index, item in enumerate(self.todo_items, start=1):
+            icon = {
+                "done": "✓",
+                "in_progress": "⋯",
+                "blocked": "x",
+                "todo": "□",
+            }.get(item.status, "□")
+            status_text = item.status.replace("_", " ").upper()
+            lines.append(f"{icon} {index}. {status_text}")
+            lines.append(item.title)
+            if item.reason:
+                lines.append(f"Reason: {item.reason}")
+            lines.append(f"ID: {item.todo_id}")
+            if index < len(self.todo_items):
+                lines.append("")
+        return "\n".join(lines)
+
+    def todo_summary(self) -> str:
+        totals = {"done": 0, "in_progress": 0, "blocked": 0, "todo": 0}
+        for item in self.todo_items:
+            totals[item.status] = totals.get(item.status, 0) + 1
+        return (
+            f"{totals['done']} done, "
+            f"{totals['in_progress']} in progress, "
+            f"{totals['blocked']} blocked, "
+            f"{totals['todo']} todo"
+        )
+
+    def advance_todo_progress(self) -> None:
+        for item in self.todo_items:
+            if item.status == "in_progress":
+                item.status = "done"
+                break
+        for item in self.todo_items:
+            if item.status == "todo":
+                item.status = "in_progress"
+                break
 
     def set_active_thread(self, thread_id: str) -> None:
         if thread_id in self.threads:
@@ -697,6 +765,31 @@ class OpenHandsCLIApp(App):
                 ],
             ),
         }
+
+    def _build_seed_todos(self) -> list[TodoItem]:
+        return [
+            TodoItem(
+                title="Convert search bar form, dropdown, infobar with animations and responsive behavior",
+                todo_id="convert_search_bar",
+                status="done",
+            ),
+            TodoItem(
+                title="Convert small components (tooltip, feed-toggle, error-display, sticky-header, flair, label)",
+                todo_id="convert_small_components",
+                status="in_progress",
+            ),
+            TodoItem(
+                title="Convert reply form with textarea, buttons, markdown help table, options",
+                todo_id="convert_reply_form",
+                status="blocked",
+                reason="dependency on markdown lib upgrade",
+            ),
+            TodoItem(
+                title="Convert complex markdown rendering with nested selectors using Tailwind classes",
+                todo_id="convert_markdown_rendering",
+                status="todo",
+            ),
+        ]
 
 
 if __name__ == "__main__":
