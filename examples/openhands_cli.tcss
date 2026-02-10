@@ -1,0 +1,123 @@
+Screen {
+    background: $surface;
+    color: $text;
+}
+
+#startup-shell {
+    width: 1fr;
+    height: 1fr;
+    align: center middle;
+    layout: vertical;
+    padding: 2 4;
+    background: $surface;
+}
+
+#startup-logo {
+    width: auto;
+    color: $warning;
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+#startup-title {
+    color: $accent;
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+#startup-tips {
+    width: 80;
+    max-width: 95%;
+    border: tall $panel;
+    background: $surface;
+    color: $text-muted;
+    padding: 1 2;
+    margin-bottom: 1;
+}
+
+#startup-call-to-action {
+    color: $success;
+    text-style: bold;
+}
+
+#main-shell {
+    width: 1fr;
+    height: 1fr;
+    layout: vertical;
+}
+
+#status-line {
+    height: auto;
+    border-bottom: solid $panel;
+    background: $surface-lighten-1;
+    color: $text;
+    padding: 0 1;
+}
+
+#workspace {
+    height: 1fr;
+    width: 1fr;
+}
+
+#thread-panel {
+    width: 34;
+    min-width: 28;
+    max-width: 44;
+    border-right: heavy $panel;
+    background: $surface-darken-1;
+    padding: 0 1;
+}
+
+#chat-panel {
+    width: 1fr;
+    padding: 0 1;
+}
+
+.panel-title {
+    color: $text-muted;
+    margin-top: 1;
+    margin-bottom: 1;
+    text-style: bold;
+}
+
+#threads {
+    height: 1fr;
+    border: tall $panel;
+    background: $surface;
+}
+
+#chat-view {
+    height: 1fr;
+    border: tall $panel;
+    background: $surface;
+    padding: 0 1;
+}
+
+.bubble {
+    margin: 1 0;
+    padding: 0 1;
+    border: round $panel;
+}
+
+.assistant {
+    margin-right: 10;
+    border: round $success;
+    background: $success 10%;
+}
+
+.user {
+    margin-left: 10;
+    border: round $primary;
+    background: $primary 12%;
+}
+
+#chat-input {
+    margin: 1;
+    border: round $accent;
+    background: $surface-lighten-1;
+    color: $text;
+}
+
+Footer {
+    background: $surface-darken-1;
+}
