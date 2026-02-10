@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
+import re
 from uuid import uuid4
 
 from textual import on
@@ -317,9 +319,12 @@ class MainShellScreen(Screen):
         user_message = ChatMessage("user", content)
         app.active_thread.messages.append(user_message)
 
-        assistant_message = ChatMessage("assistant", app.build_mock_response(content))
-        app.active_thread.messages.append(assistant_message)
+        processing_message = ChatMessage("assistant", app.build_processing_preview(content))
+        app.active_thread.messages.append(processing_message)
+        await self.sync_from_app_state()
+        await asyncio.sleep(0.9)
 
+        processing_message.content = app.build_mock_response(content)
         await self.sync_from_app_state()
 
     @on(Input.Changed, "#chat-input")
@@ -596,6 +601,29 @@ class OpenHandsCLIApp(App):
             "I can break this request into tasks, generate scaffold code, and propose tests.\n"
             f"Current model: `{self.model_name}`."
         )
+
+    def build_processing_preview(self, prompt: str) -> str:
+        target = self._get_lookup_target(prompt)
+        return (
+            f"Now let me look at the **{target}** component:\n\n"
+            f"┌ Read `{target}` ⋮\n\n"
+            "(esc to cancel • 3s, Ctrl-S to show details)"
+        )
+
+    def _get_lookup_target(self, prompt: str) -> str:
+        at_path = re.search(r"@([\w./-]+)", prompt)
+        if at_path:
+            return at_path.group(1)
+
+        file_like = re.search(r"([\w./-]+\.(?:py|ts|tsx|js|jsx|css|tcss|md))", prompt)
+        if file_like:
+            return file_like.group(1)
+
+        component = re.search(r"([a-zA-Z0-9_-]+(?:\\s+[a-zA-Z0-9_-]+){0,2})", prompt.strip())
+        if component:
+            return component.group(1).replace(" ", "-")
+
+        return "project-files"
 
     def execute_mock_command(self, command_id: str) -> None:
         if command_id == "connect_local":
