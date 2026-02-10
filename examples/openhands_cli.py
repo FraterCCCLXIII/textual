@@ -229,6 +229,8 @@ class MainShellScreen(Screen):
                     with VerticalScroll(id="chat-view"):
                         pass
             yield Static(id="tips-drawer")
+            yield Static("Proceed with action?", id="approval-title")
+            yield OptionList(id="approval-options", compact=True)
             yield Input(
                 placeholder="Type a request (or @path/to/file), then press Enter",
                 id="chat-input",
@@ -241,9 +243,11 @@ class MainShellScreen(Screen):
         self.slash_matches: list[SlashCommand] = []
         self.slash_selected_index = 0
         self.tips_visible = True
+        self.approval_visible = False
         await self.sync_from_app_state()
         self.query_one("#chat-input", Input).focus()
         self._hide_slash_menu()
+        self._setup_approval_options()
 
     async def sync_from_app_state(self) -> None:
         self._render_onboarding_banner()
@@ -251,6 +255,7 @@ class MainShellScreen(Screen):
         self._render_status_line()
         self._render_todo_list()
         self._render_tips_drawer()
+        self._render_approval_prompt()
         await self._render_active_thread()
 
     def _render_onboarding_banner(self) -> None:
@@ -311,6 +316,28 @@ class MainShellScreen(Screen):
         )
         drawer.update(tips)
         drawer.add_class("-visible")
+
+    def _setup_approval_options(self) -> None:
+        option_list = self.query_one("#approval-options", OptionList)
+        option_list.clear_options()
+        option_list.add_options(
+            [
+                Option("Yes, allow once (Y)", id="allow_once"),
+                Option("No (N)", id="deny"),
+                Option("Always (A)", id="always"),
+            ]
+        )
+        option_list.highlighted = 0
+
+    def _render_approval_prompt(self) -> None:
+        title = self.query_one("#approval-title", Static)
+        options = self.query_one("#approval-options", OptionList)
+        if self.approval_visible:
+            title.add_class("-visible")
+            options.add_class("-visible")
+        else:
+            title.remove_class("-visible")
+            options.remove_class("-visible")
 
     async def _render_active_thread(self) -> None:
         app = self.app
@@ -418,6 +445,24 @@ class MainShellScreen(Screen):
         self.tips_visible = not self.tips_visible
         self._render_tips_drawer()
 
+    @on(OptionList.OptionSelected, "#approval-options")
+    async def on_approval_selected(self, event: OptionList.OptionSelected) -> None:
+        if event.option_id is None:
+            return
+        app = self.app
+        assert isinstance(app, OpenHandsCLIApp)
+        decision_map = {
+            "allow_once": "Yes, allow once",
+            "deny": "No",
+            "always": "Always",
+        }
+        app.active_thread.messages.append(
+            ChatMessage("assistant", f"Approval decision: **{decision_map[event.option_id]}**.")
+        )
+        self.approval_visible = False
+        await self.sync_from_app_state()
+        self.query_one("#chat-input", Input).focus()
+
     async def _run_slash_command(self, raw_text: str) -> bool:
         app = self.app
         assert isinstance(app, OpenHandsCLIApp)
@@ -458,6 +503,26 @@ class MainShellScreen(Screen):
             app.active_thread.messages.append(
                 ChatMessage("assistant", f"Task list summary: {app.todo_summary()}")
             )
+        elif command_name == "sample":
+            app.active_thread.messages.append(
+                ChatMessage(
+                    "user",
+                    "> Enhance get_value in dict_helpers.py to support accessing nested dictionary values using a\n"
+                    "dot-separated string for the key (e.g., 'user.address.city'). If any part of the path\n"
+                    "doesn't exist, it should return the default value.",
+                )
+            )
+            app.active_thread.messages.append(
+                ChatMessage(
+                    "assistant",
+                    "Agent running...\n\n"
+                    "$ rg --files | rg dict_helpers.py\n\n"
+                    "I'll help you enhance `get_value` to support dot-separated nested paths.\n"
+                    "First, let's locate and inspect the implementation.",
+                )
+            )
+            self.approval_visible = True
+            self.query_one("#approval-options", OptionList).highlighted = 0
         elif command_name == "repo":
             app.cycle_repo_source()
             self.notify(f"Repository source set to {app.repo_source}.")
@@ -475,6 +540,8 @@ class MainShellScreen(Screen):
             return True
 
         await self.sync_from_app_state()
+        if self.approval_visible:
+            self.query_one("#approval-options", OptionList).focus()
         return True
 
     def _render_slash_menu(self) -> None:
@@ -565,6 +632,7 @@ class OpenHandsCLIApp(App):
             SlashCommand("init", "Initialize a new repository"),
             SlashCommand("status", "Display conversation details and usage metrics"),
             SlashCommand("todo", "Show task list summary"),
+            SlashCommand("sample", "Show multiline prompt + approval selection sample"),
             SlashCommand("repo", "Switch repository source local/cloud"),
             SlashCommand("model", "Switch active model"),
             SlashCommand("new", "Create a new conversation thread"),

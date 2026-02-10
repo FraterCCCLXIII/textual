@@ -170,6 +170,34 @@ Screen {
     display: block;
 }
 
+#approval-title {
+    display: none;
+    margin: 1 1 0 1;
+    border: round $panel;
+    border-bottom: none;
+    background: $surface;
+    color: $text;
+    padding: 0 2;
+    text-style: bold;
+}
+
+#approval-title.-visible {
+    display: block;
+}
+
+#approval-options {
+    display: none;
+    margin: 0 1 1 1;
+    border: round $panel;
+    background: $surface;
+    color: $text;
+    padding: 0 1;
+}
+
+#approval-options.-visible {
+    display: block;
+}
+
 #slash-menu {
     display: none;
     margin: 0 1 1 1;
