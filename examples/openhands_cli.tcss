@@ -137,6 +137,15 @@ Screen {
     margin-bottom: 1;
 }
 
+#cost-feed-card {
+    height: auto;
+    border: round $panel;
+    background: $surface;
+    color: $text;
+    padding: 0 2;
+    margin-bottom: 1;
+}
+
 .chat-line {
     margin: 1 0;
     padding: 0;

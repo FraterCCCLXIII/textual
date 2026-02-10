@@ -211,6 +211,7 @@ class MainShellScreen(Screen):
         ("ctrl+n", "new_thread", "New Thread"),
         ("ctrl+r", "cycle_repo_source", "Repo"),
         ("ctrl+m", "cycle_model", "Model"),
+        ("ctrl+s", "toggle_task_output_details", "Details"),
         ("ctrl+d", "toggle_tips_drawer", "Tips"),
         ("ctrl+t", "app.toggle_dark", "Theme"),
     ]
@@ -225,6 +226,7 @@ class MainShellScreen(Screen):
                     yield OptionList(id="threads", compact=True)
                 with Vertical(id="chat-panel"):
                     yield Static("Active Conversation", classes="panel-title")
+                    yield Static(id="cost-feed-card")
                     yield Static(id="todo-list-card")
                     with VerticalScroll(id="chat-view"):
                         pass
@@ -244,6 +246,9 @@ class MainShellScreen(Screen):
         self.slash_selected_index = 0
         self.tips_visible = True
         self.approval_visible = False
+        self.task_output_expanded = True
+        self.last_task_prompt = ""
+        self.last_task_message: ChatMessage | None = None
         await self.sync_from_app_state()
         self.query_one("#chat-input", Input).focus()
         self._hide_slash_menu()
@@ -253,6 +258,7 @@ class MainShellScreen(Screen):
         self._render_onboarding_banner()
         self._render_thread_list()
         self._render_status_line()
+        self._render_cost_feed()
         self._render_todo_list()
         self._render_tips_drawer()
         self._render_approval_prompt()
@@ -300,6 +306,12 @@ class MainShellScreen(Screen):
         assert isinstance(app, OpenHandsCLIApp)
         card = self.query_one("#todo-list-card", Static)
         card.update(app.build_todo_render())
+
+    def _render_cost_feed(self) -> None:
+        app = self.app
+        assert isinstance(app, OpenHandsCLIApp)
+        card = self.query_one("#cost-feed-card", Static)
+        card.update(f"Current Credit Cost: {app.format_credit_cost()}")
 
     def _render_tips_drawer(self) -> None:
         drawer = self.query_one("#tips-drawer", Static)
@@ -387,7 +399,13 @@ class MainShellScreen(Screen):
         await self.sync_from_app_state()
         await asyncio.sleep(0.9)
 
-        processing_message.content = app.build_mock_response(content)
+        self.task_output_expanded = True
+        self.last_task_prompt = content
+        self.last_task_message = processing_message
+        processing_message.content = app.build_completed_task_result(
+            prompt=content, expanded=self.task_output_expanded
+        )
+        app.increment_credit_cost(content)
         app.advance_todo_progress()
         await self.sync_from_app_state()
 
@@ -445,6 +463,18 @@ class MainShellScreen(Screen):
         self.tips_visible = not self.tips_visible
         self._render_tips_drawer()
 
+    async def action_toggle_task_output_details(self) -> None:
+        if self.last_task_message is None:
+            self.notify("No completed task output to toggle yet.")
+            return
+        app = self.app
+        assert isinstance(app, OpenHandsCLIApp)
+        self.task_output_expanded = not self.task_output_expanded
+        self.last_task_message.content = app.build_completed_task_result(
+            prompt=self.last_task_prompt, expanded=self.task_output_expanded
+        )
+        await self.sync_from_app_state()
+
     @on(OptionList.OptionSelected, "#approval-options")
     async def on_approval_selected(self, event: OptionList.OptionSelected) -> None:
         if event.option_id is None:
@@ -472,10 +502,11 @@ class MainShellScreen(Screen):
             self._render_slash_menu()
             return True
 
-        if command_name in {"$", "credits"}:
-            self.notify("Credits usage: 18% this session (mock)")
+        if command_name in {"$", "credits", "cost"}:
+            cost_text = app.format_credit_cost()
+            self.notify(f"Current credit cost: {cost_text}")
             app.active_thread.messages.append(
-                ChatMessage("assistant", "Current credit use: **18%** (mock).")
+                ChatMessage("assistant", f"Current credit cost: **{cost_text}**")
             )
         elif command_name == "help":
             command_help = "\n".join(
@@ -590,6 +621,7 @@ class OpenHandsCLIApp(App):
         self.provider_choice: str | None = None
         self.conversation_id: str | None = None
         self.todo_items = self._build_seed_todos()
+        self.credit_cost = 0.065
 
     @property
     def repo_source(self) -> str:
@@ -627,6 +659,7 @@ class OpenHandsCLIApp(App):
     def slash_commands(self) -> list[SlashCommand]:
         return [
             SlashCommand("$", "Show current credit use"),
+            SlashCommand("cost", "Display current credit cost"),
             SlashCommand("exit", "Exit the application"),
             SlashCommand("help", "Display available commands"),
             SlashCommand("init", "Initialize a new repository"),
@@ -703,6 +736,13 @@ class OpenHandsCLIApp(App):
                 item.status = "in_progress"
                 break
 
+    def increment_credit_cost(self, prompt: str) -> None:
+        # Lightweight mock cost model to make the UI feel alive.
+        self.credit_cost += 0.006 + min(len(prompt), 180) * 0.00003
+
+    def format_credit_cost(self) -> str:
+        return f"${self.credit_cost:.3f}"
+
     def set_active_thread(self, thread_id: str) -> None:
         if thread_id in self.threads:
             self.active_thread_id = thread_id
@@ -770,6 +810,40 @@ class OpenHandsCLIApp(App):
             "(esc to cancel • 3s, Ctrl-S to show details)"
         )
 
+    def build_completed_task_result(self, prompt: str, expanded: bool) -> str:
+        target = self._get_lookup_target(prompt)
+        path = self._get_lookup_path(target)
+        header = (
+            f"Now let me look at the **{target}** component:\n\n"
+            f"┌ Read `{target}` ⋮\n\n"
+            f"Here's the result of running `cat -n` on\n`{path}`:"
+        )
+
+        if not expanded:
+            return f"{header}\n\n(Ctrl-S to show details)"
+
+        output = (
+            "```text\n"
+            "1  .sidebar {\n"
+            "2      float: right;\n"
+            "3      width: 300px;\n"
+            "4      position: relative;\n"
+            "5      z-index: 5;\n"
+            "6      background-color: var(--background);\n"
+            "7      padding-left: 5px;\n"
+            "8      padding-bottom: 5px;\n"
+            "9  }\n"
+            "10\n"
+            "11 .avatar {\n"
+            "12     width: 70px;\n"
+            "13     height: 70px;\n"
+            "14     margin-bottom: 5px;\n"
+            "15     border: 1px solid var(--border-text);\n"
+            "16 }\n"
+            "```"
+        )
+        return f"{header}\n\n{output}\n\n(esc to cancel • 32s, Ctrl-S to hide details)"
+
     def _get_lookup_target(self, prompt: str) -> str:
         at_path = re.search(r"@([\w./-]+)", prompt)
         if at_path:
@@ -784,6 +858,11 @@ class OpenHandsCLIApp(App):
             return component.group(1).replace(" ", "-")
 
         return "project-files"
+
+    def _get_lookup_path(self, target: str) -> str:
+        if "/" in target:
+            return f"/workspace/project/{target}"
+        return f"/workspace/project/seedit/src/components/{target.replace('.module.css', '')}/{target}"
 
     def execute_mock_command(self, command_id: str) -> None:
         if command_id == "connect_local":
