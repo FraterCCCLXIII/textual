@@ -134,9 +134,9 @@ OptionList:focus > .option-list--option-highlighted {
     display: block;
 }
 
-#status-line {
+#status-footer {
     height: auto;
-    border-bottom: solid #555555;
+    border-top: solid #555555;
     background: #000000;
     color: #f2f2f2;
     padding: 0 1;
@@ -146,6 +146,11 @@ OptionList:focus > .option-list--option-highlighted {
     height: 1fr;
     width: 1fr;
     padding: 0 1;
+}
+
+#workspace-columns {
+    width: 1fr;
+    height: 1fr;
 }
 
 #thread-panel {
@@ -162,18 +167,65 @@ OptionList:focus > .option-list--option-highlighted {
     padding: 0 0 0 1;
 }
 
-#code-city-view {
+#fly-view {
     display: none;
-    height: auto;
-    margin: 0 1 1 1;
+    width: 1fr;
+    height: 1fr;
+    margin: 0;
     border: round #8a8a8a;
     background: #000000;
     color: #d6d6d6;
+    padding: 0;
+}
+
+#fly-view.-visible {
+    display: block;
+}
+
+#board-view {
+    display: none;
+    width: 1fr;
+    height: 1fr;
+    padding: 1 0 0 0;
+}
+
+#board-view.-visible {
+    display: block;
+}
+
+#board-columns {
+    width: 1fr;
+    height: 1fr;
+}
+
+.board-column {
+    width: 1fr;
+    height: 1fr;
+    border: round #7a7a7a;
+    background: #050505;
+    margin-right: 1;
+}
+
+.board-column-title {
+    height: auto;
+    border-bottom: solid #3a3a3a;
+    color: #d9d9d9;
+    text-style: bold;
+    content-align: center middle;
     padding: 0 1;
 }
 
-#code-city-view.-visible {
-    display: block;
+.board-list {
+    height: 1fr;
+    border: none;
+    background: #050505;
+    color: #f2f2f2;
+    padding: 0;
+}
+
+.board-list > .option-list--option {
+    border-bottom: solid #2a2a2a;
+    padding: 0 1;
 }
 
 .panel-title {
@@ -191,14 +243,16 @@ OptionList:focus > .option-list--option-highlighted {
 
 #threads > .option-list--option {
     border-bottom: solid #2a2a2a;
-    padding-right: 1;
-    margin-bottom: 1;
+    padding: 1 1 1 0;
 }
 
 #threads > .option-list--option-hover,
 #approval-options > .option-list--option-hover,
 #slash-menu > .option-list--option-hover,
-#slash-submenu > .option-list--option-hover {
+#slash-submenu > .option-list--option-hover,
+#board-open-list > .option-list--option-hover,
+#board-review-list > .option-list--option-hover,
+#board-merged-list > .option-list--option-hover {
     background: #181818;
     color: #f2f2f2;
 }
@@ -206,7 +260,10 @@ OptionList:focus > .option-list--option-highlighted {
 #threads > .option-list--option-highlighted,
 #approval-options > .option-list--option-highlighted,
 #slash-menu > .option-list--option-highlighted,
-#slash-submenu > .option-list--option-highlighted {
+#slash-submenu > .option-list--option-highlighted,
+#board-open-list > .option-list--option-highlighted,
+#board-review-list > .option-list--option-highlighted,
+#board-merged-list > .option-list--option-highlighted {
     background: #2a2a2a;
     color: white;
     text-style: bold;
@@ -215,7 +272,10 @@ OptionList:focus > .option-list--option-highlighted {
 #threads:focus > .option-list--option-highlighted,
 #approval-options:focus > .option-list--option-highlighted,
 #slash-menu:focus > .option-list--option-highlighted,
-#slash-submenu:focus > .option-list--option-highlighted {
+#slash-submenu:focus > .option-list--option-highlighted,
+#board-open-list:focus > .option-list--option-highlighted,
+#board-review-list:focus > .option-list--option-highlighted,
+#board-merged-list:focus > .option-list--option-highlighted {
     background: #3a3a3a;
     color: white;
 }

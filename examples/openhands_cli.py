@@ -306,16 +306,30 @@ class MainShellScreen(Screen):
 
     def compose(self) -> ComposeResult:
         with Container(id="main-shell"):
-            yield Static(id="onboarding-banner")
-            yield Static(id="status-line")
             with Horizontal(id="workspace"):
-                with Vertical(id="thread-panel"):
-                    yield Static("Conversations", classes="panel-title")
-                    yield OptionList(id="threads", compact=True)
-                with Vertical(id="chat-panel"):
-                    yield Static(id="code-city-view")
-                    with VerticalScroll(id="chat-view"):
-                        pass
+                with Horizontal(id="workspace-columns"):
+                    with Vertical(id="thread-panel"):
+                        yield Static("Conversations", classes="panel-title")
+                        yield OptionList(id="threads", compact=True)
+                    with Vertical(id="chat-panel"):
+                        with VerticalScroll(id="chat-view"):
+                            pass
+                with Container(id="board-view"):
+                    with Horizontal(id="board-columns"):
+                        with Vertical(classes="board-column"):
+                            yield Static("OPEN", classes="board-column-title")
+                            yield OptionList(id="board-open-list", classes="board-list", compact=True)
+                        with Vertical(classes="board-column"):
+                            yield Static("REVIEW", classes="board-column-title")
+                            yield OptionList(
+                                id="board-review-list", classes="board-list", compact=True
+                            )
+                        with Vertical(classes="board-column"):
+                            yield Static("MERGED", classes="board-column-title")
+                            yield OptionList(
+                                id="board-merged-list", classes="board-list", compact=True
+                            )
+                yield Static(id="fly-view")
             yield Static(id="tips-drawer")
             yield Static("Proceed with action?", id="approval-title")
             yield OptionList(id="approval-options", compact=True)
@@ -326,6 +340,7 @@ class MainShellScreen(Screen):
             yield OptionList(id="slash-menu", compact=True)
             yield Static(id="slash-submenu-title")
             yield OptionList(id="slash-submenu", compact=True)
+            yield Static(id="status-footer")
             yield Footer()
 
     async def on_mount(self) -> None:
@@ -340,14 +355,23 @@ class MainShellScreen(Screen):
         self.last_task_prompt = ""
         self.last_task_message: ChatMessage | None = None
         self.code_city_visible = False
+        self.kanban_visible = False
         self.code_city_phase = 0.0
         self.code_city_timer = None
+        self.code_city_towers = self._build_code_city_towers()
+        self.board_task_to_thread: dict[str, str] = {}
+        self.code_city_loop_length = max(
+            (tower["z"] + tower["depth"] for tower in self.code_city_towers),
+            default=240.0,
+        ) + 12.0
         await self.sync_from_app_state()
         self.query_one("#chat-input", Input).focus()
         self._hide_slash_menu()
         self._hide_slash_submenu()
         self._setup_approval_options()
+        self._render_kanban_board()
         self._apply_thread_drawer_visibility()
+        self._apply_workspace_mode()
         self._render_code_city_scene()
 
     def on_unmount(self) -> None:
@@ -356,26 +380,12 @@ class MainShellScreen(Screen):
             self.code_city_timer = None
 
     async def sync_from_app_state(self) -> None:
-        self._render_onboarding_banner()
         self._render_thread_list()
         self._render_status_line()
         self._render_tips_drawer()
         self._render_approval_prompt()
+        self._render_kanban_board()
         await self._render_active_thread()
-
-    def _render_onboarding_banner(self) -> None:
-        app = self.app
-        assert isinstance(app, OpenHandsCLIApp)
-        banner = self.query_one("#onboarding-banner", Static)
-        if app.onboarding_complete and app.conversation_id:
-            banner.update(
-                f"Initialized conversation {app.conversation_id} "
-                f"| Provider: {app.provider_choice or 'OpenHands'}"
-            )
-            banner.add_class("-visible")
-        else:
-            banner.update("")
-            banner.remove_class("-visible")
 
     def _render_thread_list(self) -> None:
         app = self.app
@@ -393,11 +403,12 @@ class MainShellScreen(Screen):
         app = self.app
         assert isinstance(app, OpenHandsCLIApp)
         thread = app.active_thread
-        self.query_one("#status-line", Static).update(
-            "OpenHands CLI  |  "
-            f"Repo source: {app.repo_source}  |  "
-            f"Model: {app.model_name}  |  "
-            f"Thread: {thread.title}"
+        repo_name = thread.repository.rstrip("/").split("/")[-1] or thread.repository
+        branch_name = app.branch_name
+        self.query_one("#status-footer", Static).update(
+            f"📦 {repo_name}  |  "
+            f"⎇ {branch_name}  |  "
+            f"Model: {app.model_name}"
         )
 
     def _render_tips_drawer(self) -> None:
@@ -418,8 +429,30 @@ class MainShellScreen(Screen):
         drawer.add_class("-visible")
 
     def _apply_thread_drawer_visibility(self) -> None:
+        if self.code_city_visible or self.kanban_visible:
+            return
         panel = self.query_one("#thread-panel", Vertical)
         panel.styles.display = "block" if self.drawer_visible else "none"
+
+    def _apply_workspace_mode(self) -> None:
+        columns = self.query_one("#workspace-columns", Horizontal)
+        board = self.query_one("#board-view", Container)
+        flythrough = self.query_one("#fly-view", Static)
+        if self.code_city_visible:
+            columns.styles.display = "none"
+            board.remove_class("-visible")
+            flythrough.add_class("-visible")
+            return
+        if self.kanban_visible:
+            columns.styles.display = "none"
+            flythrough.remove_class("-visible")
+            board.add_class("-visible")
+            self.query_one("#board-open-list", OptionList).focus()
+            return
+        columns.styles.display = "block"
+        board.remove_class("-visible")
+        flythrough.remove_class("-visible")
+        self._apply_thread_drawer_visibility()
 
     def _setup_approval_options(self) -> None:
         option_list = self.query_one("#approval-options", OptionList)
@@ -446,6 +479,9 @@ class MainShellScreen(Screen):
     def _set_code_city_scene_enabled(self, enabled: bool) -> None:
         self.code_city_visible = enabled
         if enabled:
+            self.kanban_visible = False
+        self._apply_workspace_mode()
+        if enabled:
             if self.code_city_timer is None:
                 self.code_city_timer = self.set_interval(
                     1 / 12, self._advance_code_city_scene
@@ -458,79 +494,271 @@ class MainShellScreen(Screen):
             self.code_city_timer = None
         self._render_code_city_scene()
 
+    def _set_kanban_board_enabled(self, enabled: bool) -> None:
+        self.kanban_visible = enabled
+        if enabled:
+            self.code_city_visible = False
+            if self.code_city_timer is not None:
+                self.code_city_timer.stop()
+                self.code_city_timer = None
+            self._render_kanban_board()
+        self._apply_workspace_mode()
+
+    def _build_kanban_cards(self) -> dict[str, list[dict[str, str]]]:
+        app = self.app
+        assert isinstance(app, OpenHandsCLIApp)
+        threads = app.ordered_threads
+        status_order = ["OPEN", "REVIEW", "MERGED"]
+        templates = [
+            ("PR #431", "Onboarding trust flow polish"),
+            ("PR #432", "Command submenu keyboard fixes"),
+            ("PR #433", "Monochrome theme token pass"),
+            ("PR #434", "Tips drawer interaction polish"),
+            ("PR #435", "Cost and todo thread components"),
+            ("PR #436", "Workspace fly mode renderer"),
+        ]
+        status_cards: dict[str, list[dict[str, str]]] = {key: [] for key in status_order}
+        if not threads:
+            return status_cards
+
+        for index, (pr_id, title) in enumerate(templates):
+            thread = threads[index % len(threads)]
+            status = status_order[index % len(status_order)]
+            status_cards[status].append(
+                {
+                    "task_id": f"board-{status.lower()}-{index}",
+                    "pr": pr_id,
+                    "title": title,
+                    "thread_id": thread.thread_id,
+                    "thread_title": thread.title,
+                    "repo": thread.repository,
+                }
+            )
+        return status_cards
+
+    def _render_kanban_board(self) -> None:
+        cards = self._build_kanban_cards()
+        self.board_task_to_thread = {}
+        column_map = [
+            ("OPEN", "#board-open-list"),
+            ("REVIEW", "#board-review-list"),
+            ("MERGED", "#board-merged-list"),
+        ]
+        for status, selector in column_map:
+            option_list = self.query_one(selector, OptionList)
+            option_list.clear_options()
+            options: list[Option] = []
+            for card in cards[status]:
+                self.board_task_to_thread[card["task_id"]] = card["thread_id"]
+                label = (
+                    f"┌ {card['pr']}\n"
+                    f"│ {card['title']}\n"
+                    f"│ conv: {card['thread_title']}\n"
+                    f"│ repo: {card['repo']}\n"
+                    "└"
+                )
+                options.append(Option(label, id=card["task_id"]))
+            if not options:
+                options.append(Option("┌ No PRs\n└", id=f"{status.lower()}-none"))
+            option_list.add_options(options)
+            option_list.highlighted = 0
+
     def _advance_code_city_scene(self) -> None:
         if not self.code_city_visible:
             return
-        self.code_city_phase += 0.45
+        self.code_city_phase += 0.38
         self._render_code_city_scene()
 
+    def _build_code_city_towers(self) -> list[dict[str, float]]:
+        rng = random.Random(2112)
+        towers: list[dict[str, float]] = []
+        for index in range(44):
+            side = -1.0 if index % 2 == 0 else 1.0
+            z = 10.0 + index * 7.2 + rng.uniform(-1.4, 1.8)
+            width = rng.uniform(2.2, 5.2)
+            depth = rng.uniform(2.6, 5.6)
+            height = rng.uniform(8.0, 36.0)
+            setback = rng.uniform(7.0, 15.0)
+            x_center = side * (setback + width * 0.5 + rng.uniform(-1.2, 1.2))
+            towers.append(
+                {
+                    "x0": x_center - width / 2,
+                    "x1": x_center + width / 2,
+                    "z": z,
+                    "depth": depth,
+                    "height": height,
+                }
+            )
+        return towers
+
     def _render_code_city_scene(self) -> None:
-        scene = self.query_one("#code-city-view", Static)
+        scene = self.query_one("#fly-view", Static)
         if not self.code_city_visible:
             scene.update("")
             scene.remove_class("-visible")
             return
-        scene.update(self._build_code_city_frame())
+        # Render as plain text because the frame intentionally contains [] and <> glyphs.
+        scene.update(Text(self._build_code_city_frame()))
         scene.add_class("-visible")
 
     def _build_code_city_frame(self) -> str:
-        width = 76
-        height = 14
+        scene = self.query_one("#fly-view", Static)
+        frame_width = scene.size.width if scene.size.width else 0
+        frame_height = scene.size.height if scene.size.height else 0
+        width = max(72, frame_width if frame_width > 0 else 108)
+        height = max(16, frame_height if frame_height > 0 else 20)
         center = width // 2
-        phase = int(self.code_city_phase * 2)
-        glyphs = "01[]{}<>/+=*#"
-
+        travel = self.code_city_phase
         grid = [[" "] * width for _ in range(height)]
+        horizon = max(2, int(height * 0.30))
+        near_plane = 1.1
+        far_plane = 120.0
+        focal = width * 0.95
+        camera_y = 2.0
 
-        for row in range(height):
-            perspective = row / max(height - 1, 1)
-            lane_half = max(2, int(2 + perspective * 20))
-            block_depth = max(6, int(8 + perspective * 10))
+        def put(x: int, y: int, ch: str) -> None:
+            if 0 <= x < width and 0 <= y < height:
+                grid[y][x] = ch
 
-            left_inner = center - lane_half
-            right_inner = center + lane_half
-            left_outer = max(0, left_inner - block_depth)
-            right_outer = min(width - 1, right_inner + block_depth)
+        def draw_line(x1: int, y1: int, x2: int, y2: int, ch: str) -> None:
+            steps = max(abs(x2 - x1), abs(y2 - y1), 1)
+            steps = min(steps, (width + height) * 2)
+            for step in range(steps + 1):
+                t = step / steps
+                x = int(round(x1 + (x2 - x1) * t))
+                y = int(round(y1 + (y2 - y1) * t))
+                put(x, y, ch)
 
-            grid[row][left_inner] = "/"
-            grid[row][right_inner] = "\\"
+        def project(x: float, y_world: float, z: float) -> tuple[int, int] | None:
+            if z <= near_plane or z >= far_plane:
+                return None
+            y = y_world - camera_y
+            scale = focal / z
+            sx = int(round(center + x * scale))
+            sy = int(round(horizon - y * scale))
+            return sx, sy
 
-            if (row + phase) % 3 == 0:
-                for offset in (-1, 0, 1):
-                    lane_x = center + offset
-                    if 0 <= lane_x < width:
-                        grid[row][lane_x] = "|"
+        def depth_char(z: float) -> str:
+            if z < 12:
+                return "#"
+            if z < 26:
+                return "|"
+            if z < 48:
+                return ":"
+            return "."
 
-            for x in range(left_outer, left_inner):
-                glyph = glyphs[(x * 3 + row * 7 + phase) % len(glyphs)]
-                if (x + row + phase) % 6 == 0:
-                    glyph = "."
-                grid[row][x] = glyph
+        # Distant skyline stars.
+        for x in range(width):
+            if (x * 11 + int(travel * 19)) % 29 == 0:
+                put(x, max(0, horizon - 2), ".")
 
-            for x in range(right_inner + 1, right_outer + 1):
-                glyph = glyphs[(x * 5 + row * 11 + phase) % len(glyphs)]
-                if (x + row + phase) % 7 == 0:
-                    glyph = "."
-                grid[row][x] = glyph
+        # Ground grid / lane traces with perspective projection.
+        road_half_world = 5.4
+        stride = 3.2
+        z_cursor = near_plane + 0.8
+        grid_phase = (travel * 2.7) % stride
+        while z_cursor < far_plane:
+            z = z_cursor + (stride - grid_phase)
+            left = project(-road_half_world, 0.0, z)
+            right = project(road_half_world, 0.0, z)
+            if left and right:
+                draw_line(left[0], left[1], right[0], right[1], ".")
+            z_cursor += stride
 
-            if row > 1 and (row + phase) % 4 == 0:
-                for x in range(left_outer, left_inner):
-                    if (x + phase) % 4 == 0:
-                        grid[row][x] = "-"
-                for x in range(right_inner + 1, right_outer + 1):
-                    if (x + phase) % 4 == 0:
-                        grid[row][x] = "-"
+        for x in (-3.6, -2.0, 0.0, 2.0, 3.6):
+            prev = None
+            z = near_plane + 0.9
+            while z < far_plane:
+                point = project(x, 0.0, z)
+                if prev and point:
+                    draw_line(prev[0], prev[1], point[0], point[1], "|")
+                prev = point
+                z += 2.6
 
-        for x in range(center - 2, center + 3):
-            if 0 <= x < width:
-                grid[0][x] = "^"
+        # Draw tower cuboids far-to-near for stable layering.
+        wrapped_towers: list[dict[str, float]] = []
+        loop_length = max(self.code_city_loop_length, 120.0)
+        for tower in self.code_city_towers:
+            z_near = ((tower["z"] - travel) % loop_length) + near_plane + 1.8
+            z_far = z_near + tower["depth"]
+            if z_near >= far_plane:
+                continue
+            wrapped_towers.append(
+                {
+                    "x0": tower["x0"],
+                    "x1": tower["x1"],
+                    "height": tower["height"],
+                    "z_near": z_near,
+                    "z_far": z_far,
+                }
+            )
 
-        lines = ["".join(row).rstrip() for row in grid]
-        return (
-            "Code City Workspace Simulation - flying through code buildings\n"
-            + "\n".join(lines)
-            + "\n/fly on | /fly off | /fly toggle"
-        )
+        wrapped_towers.sort(key=lambda item: item["z_near"], reverse=True)
+
+        for index, tower in enumerate(wrapped_towers):
+            x0 = tower["x0"]
+            x1 = tower["x1"]
+            h = tower["height"]
+            z0 = tower["z_near"]
+            z1 = tower["z_far"]
+            edge = depth_char(z0)
+
+            # 8 cuboid corners: bottom ring then top ring.
+            corners_world = [
+                (x0, 0.0, z0),
+                (x1, 0.0, z0),
+                (x1, 0.0, z1),
+                (x0, 0.0, z1),
+                (x0, h, z0),
+                (x1, h, z0),
+                (x1, h, z1),
+                (x0, h, z1),
+            ]
+            corners = [project(*corner) for corner in corners_world]
+            if any(corner is None for corner in corners):
+                continue
+
+            points = [corner for corner in corners if corner is not None]
+            if len(points) != 8:
+                continue
+
+            # Edges for a cuboid (wireframe).
+            edges = [
+                (0, 1),
+                (1, 2),
+                (2, 3),
+                (3, 0),
+                (4, 5),
+                (5, 6),
+                (6, 7),
+                (7, 4),
+                (0, 4),
+                (1, 5),
+                (2, 6),
+                (3, 7),
+            ]
+            for a, b in edges:
+                pa = points[a]
+                pb = points[b]
+                draw_line(pa[0], pa[1], pb[0], pb[1], edge)
+
+            # Window/facade glyphs on near face for depth cues.
+            window_cols = max(2, int((x1 - x0) * 2.0))
+            window_rows = max(3, int(h / 3.0))
+            for c in range(1, window_cols):
+                for r in range(1, window_rows):
+                    wx = x0 + (x1 - x0) * (c / window_cols)
+                    wy = h * (r / window_rows)
+                    wp = project(wx, wy, z0)
+                    if wp is None:
+                        continue
+                    marker_roll = (c * 7 + r * 11 + int(travel * 13) + index) % 6
+                    marker = "1" if marker_roll in {0, 1} else "0" if marker_roll == 2 else "."
+                    put(wp[0], wp[1], marker)
+
+        # Return a full-frame buffer (no header/footer) so the animation fills the container.
+        lines = ["".join(row) for row in grid]
+        return "\n".join(lines)
 
     async def _render_active_thread(self) -> None:
         app = self.app
@@ -556,6 +784,32 @@ class MainShellScreen(Screen):
         assert isinstance(app, OpenHandsCLIApp)
         app.set_active_thread(event.option_id)
         await self.sync_from_app_state()
+
+    @on(OptionList.OptionSelected, "#board-open-list")
+    async def on_board_open_selected(self, event: OptionList.OptionSelected) -> None:
+        await self._open_kanban_card(event.option_id)
+
+    @on(OptionList.OptionSelected, "#board-review-list")
+    async def on_board_review_selected(self, event: OptionList.OptionSelected) -> None:
+        await self._open_kanban_card(event.option_id)
+
+    @on(OptionList.OptionSelected, "#board-merged-list")
+    async def on_board_merged_selected(self, event: OptionList.OptionSelected) -> None:
+        await self._open_kanban_card(event.option_id)
+
+    async def _open_kanban_card(self, option_id: str | None) -> None:
+        if option_id is None or option_id.endswith("-none"):
+            return
+        thread_id = self.board_task_to_thread.get(option_id)
+        if thread_id is None:
+            return
+        app = self.app
+        assert isinstance(app, OpenHandsCLIApp)
+        app.set_active_thread(thread_id)
+        self._set_kanban_board_enabled(False)
+        await self.sync_from_app_state()
+        self.query_one("#chat-input", Input).focus()
+        self.notify("Opened related conversation from Kanban task.")
 
     @on(Input.Submitted, "#chat-input")
     async def on_chat_submitted(self, event: Input.Submitted) -> None:
@@ -782,6 +1036,21 @@ class MainShellScreen(Screen):
                     "assistant",
                     "Workspace simulation is now "
                     f"**{state}**.\n\nUse `/fly on`, `/fly off`, or `/fly toggle`.",
+                )
+            )
+        elif command_name in {"board", "kanban", "prs"}:
+            if command_arg in {"on", "show", "start"}:
+                self._set_kanban_board_enabled(True)
+            elif command_arg in {"off", "hide", "stop"}:
+                self._set_kanban_board_enabled(False)
+            else:
+                self._set_kanban_board_enabled(not self.kanban_visible)
+            state = "visible" if self.kanban_visible else "hidden"
+            app.active_thread.messages.append(
+                ChatMessage(
+                    "assistant",
+                    "PR Kanban board is now "
+                    f"**{state}**.\n\nUse `/board on`, `/board off`, or `/board toggle`.",
                 )
             )
         elif command_name == "components":
@@ -1012,6 +1281,7 @@ class OpenHandsCLIApp(App):
         super().__init__()
         self.repo_sources = ["local", "cloud"]
         self.repo_source_index = 0
+        self.branch_name = "feature/kanban-interactive-board"
         self.models = ["gpt-4.1", "claude-sonnet", "gemini-2.5-pro"]
         self.model_index = 0
         self.thread_count = 0
@@ -1067,6 +1337,7 @@ class OpenHandsCLIApp(App):
             SlashCommand("todo", "Show task list summary"),
             SlashCommand("tips", "Show or hide the tips drawer"),
             SlashCommand("fly", "Toggle 3D code-city fly-through workspace simulation"),
+            SlashCommand("board", "Show/hide PR Kanban board linked to conversations"),
             SlashCommand("components", "Show sample conversation components gallery"),
             SlashCommand("drawer", "Show, hide, or toggle the left conversation drawer"),
             SlashCommand("sample", "Show multiline prompt + approval selection sample"),
