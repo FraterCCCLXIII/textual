@@ -1,6 +1,59 @@
 Screen {
-    background: $surface;
-    color: $text;
+    background: #000000;
+    color: #f2f2f2;
+    scrollbar-background: #0b0b0b;
+    scrollbar-background-hover: #141414;
+    scrollbar-background-active: #1d1d1d;
+    scrollbar-color: #6f6f6f;
+    scrollbar-color-hover: #8a8a8a;
+    scrollbar-color-active: #b0b0b0;
+    scrollbar-corner-color: #0b0b0b;
+}
+
+VerticalScroll,
+OptionList,
+#threads,
+#chat-view,
+#slash-menu,
+#slash-submenu,
+#approval-options {
+    scrollbar-background: #0b0b0b;
+    scrollbar-background-hover: #141414;
+    scrollbar-background-active: #1d1d1d;
+    scrollbar-color: #6f6f6f;
+    scrollbar-color-hover: #8a8a8a;
+    scrollbar-color-active: #b0b0b0;
+    scrollbar-corner-color: #0b0b0b;
+}
+
+OptionList {
+    background: #000000;
+    color: #f2f2f2;
+    border: round #8a8a8a;
+}
+
+OptionList:hover {
+    border: round #a0a0a0;
+}
+
+OptionList:focus {
+    border: round #b0b0b0;
+}
+
+OptionList > .option-list--option-hover {
+    background: #181818;
+    color: #f2f2f2;
+}
+
+OptionList > .option-list--option-highlighted {
+    background: #2a2a2a;
+    color: white;
+    text-style: bold;
+}
+
+OptionList:focus > .option-list--option-highlighted {
+    background: #3a3a3a;
+    color: white;
 }
 
 #startup-shell {
@@ -9,37 +62,36 @@ Screen {
     align: center top;
     layout: vertical;
     padding: 2 4;
-    background: $surface;
+    background: #000000;
 }
 
 #startup-logo {
     width: auto;
-    color: $warning;
+    color: #f2f2f2;
     text-style: bold;
     margin-bottom: 0;
 }
 
 #startup-version {
-    color: $text;
+    color: #f2f2f2;
     margin-bottom: 1;
 }
 
 #startup-pill {
     width: auto;
-    border: round $panel;
-    color: $text;
-    background: $surface-lighten-1;
+    border: round #8a8a8a;
+    color: #f2f2f2;
+    background: #0f0f0f;
     padding: 0 1;
     margin-bottom: 1;
 }
 
 #onboarding-main-card {
     width: 96;
-    max-width: 98%;
     max-width: 95%;
-    border: tall $panel;
-    background: $surface;
-    color: $text-muted;
+    border: round #8a8a8a;
+    background: #000000;
+    color: #d0d0d0;
     padding: 1 2;
     margin-bottom: 1;
 }
@@ -47,9 +99,9 @@ Screen {
 #onboarding-choice-card {
     display: none;
     width: 40;
-    border: round $panel;
-    background: $surface;
-    color: $text;
+    border: solid #8a8a8a;
+    background: #000000;
+    color: #f2f2f2;
     padding: 1 2;
     margin-bottom: 1;
 }
@@ -59,21 +111,22 @@ Screen {
 }
 
 #startup-call-to-action {
-    color: $success;
+    color: #d6d6d6;
 }
 
 #main-shell {
     width: 1fr;
     height: 1fr;
     layout: vertical;
+    padding: 0;
 }
 
 #onboarding-banner {
     display: none;
     height: auto;
-    border-bottom: solid $panel;
-    color: $primary-lighten-2;
-    background: $surface-lighten-1;
+    border-bottom: solid #555555;
+    color: #f2f2f2;
+    background: #0a0a0a;
     padding: 0 1;
 }
 
@@ -83,96 +136,135 @@ Screen {
 
 #status-line {
     height: auto;
-    border-bottom: solid $panel;
-    background: $surface-lighten-1;
-    color: $text;
+    border-bottom: solid #555555;
+    background: #000000;
+    color: #f2f2f2;
     padding: 0 1;
 }
 
 #workspace {
     height: 1fr;
     width: 1fr;
+    padding: 0 1;
 }
 
 #thread-panel {
-    width: 34;
-    min-width: 28;
-    max-width: 44;
-    border-right: heavy $panel;
-    background: $surface-darken-1;
-    padding: 0 1;
+    width: 30;
+    min-width: 24;
+    max-width: 38;
+    border-right: solid #555555;
+    background: #000000;
+    padding: 0 2 0 0;
 }
 
 #chat-panel {
     width: 1fr;
+    padding: 0 0 0 1;
+}
+
+#code-city-view {
+    display: none;
+    height: auto;
+    margin: 0 1 1 1;
+    border: round #8a8a8a;
+    background: #000000;
+    color: #d6d6d6;
     padding: 0 1;
 }
 
+#code-city-view.-visible {
+    display: block;
+}
+
 .panel-title {
-    color: $text-muted;
-    margin-top: 1;
-    margin-bottom: 1;
+    color: #c0c0c0;
+    margin: 0;
+    padding: 0 1;
     text-style: bold;
 }
 
 #threads {
     height: 1fr;
-    border: tall $panel;
-    background: $surface;
+    border: none;
+    background: #000000;
+}
+
+#threads > .option-list--option {
+    border-bottom: solid #2a2a2a;
+    padding-right: 1;
+    margin-bottom: 1;
+}
+
+#threads > .option-list--option-hover,
+#approval-options > .option-list--option-hover,
+#slash-menu > .option-list--option-hover,
+#slash-submenu > .option-list--option-hover {
+    background: #181818;
+    color: #f2f2f2;
+}
+
+#threads > .option-list--option-highlighted,
+#approval-options > .option-list--option-highlighted,
+#slash-menu > .option-list--option-highlighted,
+#slash-submenu > .option-list--option-highlighted {
+    background: #2a2a2a;
+    color: white;
+    text-style: bold;
+}
+
+#threads:focus > .option-list--option-highlighted,
+#approval-options:focus > .option-list--option-highlighted,
+#slash-menu:focus > .option-list--option-highlighted,
+#slash-submenu:focus > .option-list--option-highlighted {
+    background: #3a3a3a;
+    color: white;
 }
 
 #chat-view {
     height: 1fr;
-    border: tall $panel;
-    background: $surface;
-    padding: 0 1;
-}
-
-#todo-list-card {
-    height: auto;
-    border: round $panel;
-    background: $surface-lighten-1;
-    color: $text;
-    padding: 1 2;
-    margin-bottom: 1;
-}
-
-#cost-feed-card {
-    height: auto;
-    border: round $panel;
-    background: $surface;
-    color: $text;
-    padding: 0 2;
-    margin-bottom: 1;
+    border: none;
+    background: #000000;
+    padding: 0;
 }
 
 .chat-line {
-    margin: 1 0;
+    margin: 0;
     padding: 0;
 }
 
 .assistant {
-    color: $text;
+    color: #f2f2f2;
 }
 
 .user {
-    color: $text;
+    color: #f2f2f2;
 }
 
 #chat-input {
-    margin: 1;
-    border: round $accent;
-    background: $surface-lighten-1;
-    color: $text;
+    margin: 0 1 1 1;
+    border: round #8a8a8a;
+    background: #000000;
+    color: #f2f2f2;
+}
+
+#chat-input:hover {
+    border: round #a0a0a0;
+    background: #050505;
+}
+
+#chat-input:focus {
+    border: round #c8c8c8;
+    background: #050505;
+    color: white;
 }
 
 #tips-drawer {
     display: none;
-    margin: 0 1 0 1;
-    border: round $panel;
-    background: $surface;
-    color: $text;
-    padding: 1 2;
+    margin: 0 1;
+    border: round #8a8a8a;
+    background: #000000;
+    color: #f2f2f2;
+    padding: 0 1;
 }
 
 #tips-drawer.-visible {
@@ -181,12 +273,12 @@ Screen {
 
 #approval-title {
     display: none;
-    margin: 1 1 0 1;
-    border: round $panel;
+    margin: 0 1;
+    border: round #8a8a8a;
     border-bottom: none;
-    background: $surface;
-    color: $text;
-    padding: 0 2;
+    background: #000000;
+    color: #f2f2f2;
+    padding: 0 1;
     text-style: bold;
 }
 
@@ -196,11 +288,17 @@ Screen {
 
 #approval-options {
     display: none;
-    margin: 0 1 1 1;
-    border: round $panel;
-    background: $surface;
-    color: $text;
-    padding: 0 1;
+    margin: 0 1;
+    border: round #8a8a8a;
+    background: #000000;
+    color: #f2f2f2;
+    padding: 0;
+}
+
+#approval-options:hover,
+#slash-menu:hover,
+#slash-submenu:hover {
+    border: round #a0a0a0;
 }
 
 #approval-options.-visible {
@@ -209,11 +307,11 @@ Screen {
 
 #slash-menu {
     display: none;
-    margin: 0 1 1 1;
-    border: round $panel;
-    background: $surface-lighten-1;
-    color: $text;
-    padding: 1 2;
+    margin: 0 1;
+    border: round #8a8a8a;
+    background: #000000;
+    color: #f2f2f2;
+    padding: 0 1;
     text-style: bold;
 }
 
@@ -221,6 +319,34 @@ Screen {
     display: block;
 }
 
+#slash-submenu-title {
+    display: none;
+    margin: 0 1;
+    border: round #8a8a8a;
+    border-bottom: none;
+    background: #000000;
+    color: #f2f2f2;
+    padding: 0 1;
+    text-style: bold;
+}
+
+#slash-submenu-title.-visible {
+    display: block;
+}
+
+#slash-submenu {
+    display: none;
+    margin: 0 1 1 1;
+    border: round #8a8a8a;
+    background: #000000;
+    color: #f2f2f2;
+    padding: 0;
+}
+
+#slash-submenu.-visible {
+    display: block;
+}
+
 Footer {
-    background: $surface-darken-1;
+    background: #000000;
 }

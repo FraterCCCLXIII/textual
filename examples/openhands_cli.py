@@ -3,17 +3,21 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 from functools import partial
+import math
 from pathlib import Path
+import random
 import re
 from uuid import uuid4
 
-from textual import on
+from textual import events, on
 from textual.app import App, ComposeResult
 from textual.command import Hit, Hits, Provider
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
 from textual.screen import Screen
 from textual.widgets import Footer, Input, Markdown, OptionList, Static
 from textual.widgets.option_list import Option
+from markdown_it import MarkdownIt
+from rich.text import Text
 
 LOGO = r"""
     ███████                                  █████   █████                          █████        
@@ -28,6 +32,11 @@ LOGO = r"""
                █████                                                                             
               ░░░░░                                                                              
 """
+
+
+def markdown_parser_no_linkify() -> MarkdownIt:
+    """Create a markdown parser that does not require linkify-it-py."""
+    return MarkdownIt("commonmark", {"linkify": False})
 
 
 @dataclass
@@ -115,6 +124,18 @@ class OnboardingScreen(Screen):
         super().__init__()
         self.step = 1
         self.selected_index = 0
+        self.logo_time = 0.0
+        rng = random.Random(57)
+        self.logo_blobs: list[dict[str, float]] = [
+            {
+                "phase": rng.uniform(0.0, math.tau),
+                "speed_x": rng.uniform(0.55, 1.1),
+                "speed_y": rng.uniform(0.45, 1.0),
+                "radius": rng.uniform(0.16, 0.34),
+                "strength": rng.uniform(0.9, 1.4),
+            }
+            for _ in range(6)
+        ]
 
     def compose(self) -> ComposeResult:
         with Container(id="startup-shell"):
@@ -126,7 +147,12 @@ class OnboardingScreen(Screen):
             yield Static("Use ↑/↓ to navigate and Enter to continue", id="startup-call-to-action")
 
     def on_mount(self) -> None:
+        self._update_logo_animation()
+        self.logo_timer = self.set_interval(1 / 20, self._update_logo_animation)
         self._render_step()
+
+    def on_unmount(self) -> None:
+        self.logo_timer.stop()
 
     def action_cursor_up(self) -> None:
         options = self.STEP_ONE_OPTIONS if self.step == 1 else self.STEP_TWO_OPTIONS
@@ -170,7 +196,7 @@ class OnboardingScreen(Screen):
 
     def _render_step_one(self) -> None:
         card = (
-            "┌ Step 1 " + "─" * 56 + "\n\n"
+            "Step 1\n\n"
             "Select your LLM Provider\n\n"
             f"{self._format_options(self.STEP_ONE_OPTIONS)}"
         )
@@ -181,7 +207,7 @@ class OnboardingScreen(Screen):
     def _render_step_two(self) -> None:
         cwd = str(Path.cwd())
         main_card = (
-            "┌ Step 2 " + "─" * 56 + "\n\n"
+            "Step 2\n\n"
             "Do you trust the files in this folder?\n\n"
             f"{cwd}\n\n"
             "OpenHands may read and execute files in this folder with your permission."
@@ -193,6 +219,65 @@ class OnboardingScreen(Screen):
         self.query_one("#onboarding-choice-card", Static).update(choice_card)
         self.query_one("#onboarding-choice-card", Static).add_class("-visible")
 
+    def _update_logo_animation(self) -> None:
+        lines = LOGO.splitlines()
+        max_width = max(len(line) for line in lines) if lines else 1
+        max_height = max(len(lines), 1)
+        animated_logo = Text()
+        for line_index, line in enumerate(lines):
+            for char_index, char in enumerate(line):
+                if char.isspace():
+                    animated_logo.append(char)
+                    continue
+                nx = char_index / max(max_width - 1, 1)
+                ny = line_index / max(max_height - 1, 1)
+
+                # Add fluid motion so color blobs appear to intersect organically.
+                wx = nx + 0.08 * math.sin(self.logo_time * 0.8 + ny * 8.5)
+                wy = ny + 0.08 * math.cos(self.logo_time * 0.65 + nx * 7.2)
+
+                luminance_mix = 0.0
+                weight_total = 0.0
+
+                for blob in self.logo_blobs:
+                    cx = 0.5 + 0.38 * math.sin(self.logo_time * blob["speed_x"] + blob["phase"])
+                    cy = 0.5 + 0.32 * math.cos(
+                        self.logo_time * blob["speed_y"] + blob["phase"] * 1.13
+                    )
+                    dx = wx - cx
+                    dy = wy - cy
+                    dist2 = dx * dx + dy * dy
+                    radius = blob["radius"]
+                    influence = math.exp(-dist2 / max(radius * radius, 1e-5))
+                    weight = influence * blob["strength"]
+
+                    pulse = 0.55 + 0.45 * math.sin(
+                        self.logo_time * 1.1 + blob["phase"] + nx * 4.5 - ny * 3.8
+                    )
+                    luminance_mix += pulse * weight
+                    weight_total += weight
+
+                if weight_total == 0:
+                    luminance = 0.74
+                else:
+                    luminance = min(max(0.35 + 0.65 * (luminance_mix / weight_total), 0.24), 1.0)
+
+                # Keep organic movement while remaining monochrome.
+                luminance *= 0.9 + 0.18 * (
+                    0.5
+                    + 0.5
+                    * math.sin(self.logo_time * 2.3 + char_index * 0.67 + line_index * 0.91)
+                )
+                gray = int(min(max(luminance, 0.0), 1.0) * 255)
+                animated_logo.append(
+                    char,
+                    style=f"bold rgb({gray},{gray},{gray})",
+                )
+            animated_logo.append("\n")
+
+        self.logo_time += 0.06
+        self.query_one("#startup-logo", Static).update(animated_logo)
+
     def _format_options(self, options: list[OnboardingOption]) -> str:
         lines: list[str] = []
         for index, option in enumerate(options, start=1):
@@ -200,6 +285,8 @@ class OnboardingScreen(Screen):
             lines.append(f"{prefix} {index}. {option.label}")
             if option.detail:
                 lines.append(f"   {option.detail}")
+            if index < len(options):
+                lines.append("")
         return "\n".join(lines)
 
 
@@ -208,11 +295,12 @@ class MainShellScreen(Screen):
 
     BINDINGS = [
         ("ctrl+p", "app.command_palette", "Commands"),
+        ("ctrl+l", "toggle_thread_drawer", "Drawer"),
         ("ctrl+n", "new_thread", "New Thread"),
         ("ctrl+r", "cycle_repo_source", "Repo"),
         ("ctrl+m", "cycle_model", "Model"),
         ("ctrl+s", "toggle_task_output_details", "Details"),
-        ("ctrl+d", "toggle_tips_drawer", "Tips"),
+        ("ctrl+d,ctrl+w", "toggle_tips_drawer", "Tips"),
         ("ctrl+t", "app.toggle_dark", "Theme"),
     ]
 
@@ -222,12 +310,10 @@ class MainShellScreen(Screen):
             yield Static(id="status-line")
             with Horizontal(id="workspace"):
                 with Vertical(id="thread-panel"):
-                    yield Static("Conversation Threads", classes="panel-title")
+                    yield Static("Conversations", classes="panel-title")
                     yield OptionList(id="threads", compact=True)
                 with Vertical(id="chat-panel"):
-                    yield Static("Active Conversation", classes="panel-title")
-                    yield Static(id="cost-feed-card")
-                    yield Static(id="todo-list-card")
+                    yield Static(id="code-city-view")
                     with VerticalScroll(id="chat-view"):
                         pass
             yield Static(id="tips-drawer")
@@ -237,29 +323,42 @@ class MainShellScreen(Screen):
                 placeholder="Type a request (or @path/to/file), then press Enter",
                 id="chat-input",
             )
-            yield Static(id="slash-menu")
+            yield OptionList(id="slash-menu", compact=True)
+            yield Static(id="slash-submenu-title")
+            yield OptionList(id="slash-submenu", compact=True)
             yield Footer()
 
     async def on_mount(self) -> None:
         self.query_one("#chat-view", VerticalScroll).anchor()
         self.slash_matches: list[SlashCommand] = []
         self.slash_selected_index = 0
-        self.tips_visible = True
+        self.slash_submenu_command: str | None = None
+        self.drawer_visible = True
+        self.tips_visible = False
         self.approval_visible = False
         self.task_output_expanded = True
         self.last_task_prompt = ""
         self.last_task_message: ChatMessage | None = None
+        self.code_city_visible = False
+        self.code_city_phase = 0.0
+        self.code_city_timer = None
         await self.sync_from_app_state()
         self.query_one("#chat-input", Input).focus()
         self._hide_slash_menu()
+        self._hide_slash_submenu()
         self._setup_approval_options()
+        self._apply_thread_drawer_visibility()
+        self._render_code_city_scene()
+
+    def on_unmount(self) -> None:
+        if self.code_city_timer is not None:
+            self.code_city_timer.stop()
+            self.code_city_timer = None
 
     async def sync_from_app_state(self) -> None:
         self._render_onboarding_banner()
         self._render_thread_list()
         self._render_status_line()
-        self._render_cost_feed()
-        self._render_todo_list()
         self._render_tips_drawer()
         self._render_approval_prompt()
         await self._render_active_thread()
@@ -301,18 +400,6 @@ class MainShellScreen(Screen):
             f"Thread: {thread.title}"
         )
 
-    def _render_todo_list(self) -> None:
-        app = self.app
-        assert isinstance(app, OpenHandsCLIApp)
-        card = self.query_one("#todo-list-card", Static)
-        card.update(app.build_todo_render())
-
-    def _render_cost_feed(self) -> None:
-        app = self.app
-        assert isinstance(app, OpenHandsCLIApp)
-        card = self.query_one("#cost-feed-card", Static)
-        card.update(f"Current Credit Cost: {app.format_credit_cost()}")
-
     def _render_tips_drawer(self) -> None:
         drawer = self.query_one("#tips-drawer", Static)
         if not self.tips_visible:
@@ -321,13 +408,18 @@ class MainShellScreen(Screen):
             return
 
         tips = (
-            "Tips (Ctrl-D to dismiss)\n\n"
+            "Tips (Ctrl-D/Ctrl-W to dismiss)\n\n"
             "• Use /help or / to browse available commands.\n\n"
             "• Use Ctrl+P for command lookup and fuzzy actions.\n\n"
-            "• Mention a file path like @src/app.py to scope analysis."
+            "• Mention a file path like @src/app.py to scope analysis.\n\n"
+            "• Use /tips to toggle this drawer."
         )
         drawer.update(tips)
         drawer.add_class("-visible")
+
+    def _apply_thread_drawer_visibility(self) -> None:
+        panel = self.query_one("#thread-panel", Vertical)
+        panel.styles.display = "block" if self.drawer_visible else "none"
 
     def _setup_approval_options(self) -> None:
         option_list = self.query_one("#approval-options", OptionList)
@@ -351,6 +443,95 @@ class MainShellScreen(Screen):
             title.remove_class("-visible")
             options.remove_class("-visible")
 
+    def _set_code_city_scene_enabled(self, enabled: bool) -> None:
+        self.code_city_visible = enabled
+        if enabled:
+            if self.code_city_timer is None:
+                self.code_city_timer = self.set_interval(
+                    1 / 12, self._advance_code_city_scene
+                )
+            self._render_code_city_scene()
+            return
+
+        if self.code_city_timer is not None:
+            self.code_city_timer.stop()
+            self.code_city_timer = None
+        self._render_code_city_scene()
+
+    def _advance_code_city_scene(self) -> None:
+        if not self.code_city_visible:
+            return
+        self.code_city_phase += 0.45
+        self._render_code_city_scene()
+
+    def _render_code_city_scene(self) -> None:
+        scene = self.query_one("#code-city-view", Static)
+        if not self.code_city_visible:
+            scene.update("")
+            scene.remove_class("-visible")
+            return
+        scene.update(self._build_code_city_frame())
+        scene.add_class("-visible")
+
+    def _build_code_city_frame(self) -> str:
+        width = 76
+        height = 14
+        center = width // 2
+        phase = int(self.code_city_phase * 2)
+        glyphs = "01[]{}<>/+=*#"
+
+        grid = [[" "] * width for _ in range(height)]
+
+        for row in range(height):
+            perspective = row / max(height - 1, 1)
+            lane_half = max(2, int(2 + perspective * 20))
+            block_depth = max(6, int(8 + perspective * 10))
+
+            left_inner = center - lane_half
+            right_inner = center + lane_half
+            left_outer = max(0, left_inner - block_depth)
+            right_outer = min(width - 1, right_inner + block_depth)
+
+            grid[row][left_inner] = "/"
+            grid[row][right_inner] = "\\"
+
+            if (row + phase) % 3 == 0:
+                for offset in (-1, 0, 1):
+                    lane_x = center + offset
+                    if 0 <= lane_x < width:
+                        grid[row][lane_x] = "|"
+
+            for x in range(left_outer, left_inner):
+                glyph = glyphs[(x * 3 + row * 7 + phase) % len(glyphs)]
+                if (x + row + phase) % 6 == 0:
+                    glyph = "."
+                grid[row][x] = glyph
+
+            for x in range(right_inner + 1, right_outer + 1):
+                glyph = glyphs[(x * 5 + row * 11 + phase) % len(glyphs)]
+                if (x + row + phase) % 7 == 0:
+                    glyph = "."
+                grid[row][x] = glyph
+
+            if row > 1 and (row + phase) % 4 == 0:
+                for x in range(left_outer, left_inner):
+                    if (x + phase) % 4 == 0:
+                        grid[row][x] = "-"
+                for x in range(right_inner + 1, right_outer + 1):
+                    if (x + phase) % 4 == 0:
+                        grid[row][x] = "-"
+
+        for x in range(center - 2, center + 3):
+            if 0 <= x < width:
+                grid[0][x] = "^"
+
+        lines = ["".join(row).rstrip() for row in grid]
+        return (
+            "Code City Workspace Simulation - flying through code buildings\n"
+            + "\n".join(lines)
+            + "\n/fly on | /fly off | /fly toggle"
+        )
+
     async def _render_active_thread(self) -> None:
         app = self.app
         assert isinstance(app, OpenHandsCLIApp)
@@ -361,7 +542,11 @@ class MainShellScreen(Screen):
         chat_view.scroll_end(animate=False)
 
     def _make_bubble(self, message: ChatMessage) -> Markdown:
-        return Markdown(message.content, classes=f"chat-line {message.role}")
+        return Markdown(
+            message.content,
+            classes=f"chat-line {message.role}",
+            parser_factory=markdown_parser_no_linkify,
+        )
 
     @on(OptionList.OptionSelected, "#threads")
     async def on_thread_selected(self, event: OptionList.OptionSelected) -> None:
@@ -406,6 +591,9 @@ class MainShellScreen(Screen):
             prompt=content, expanded=self.task_output_expanded
         )
         app.increment_credit_cost(content)
+        app.active_thread.messages.append(
+            ChatMessage("assistant", app.build_cost_component())
+        )
         app.advance_todo_progress()
         await self.sync_from_app_state()
 
@@ -414,6 +602,7 @@ class MainShellScreen(Screen):
         value = event.value.strip()
         if not value.startswith("/"):
             self._hide_slash_menu()
+            self._hide_slash_submenu()
             return
 
         app = self.app
@@ -429,7 +618,7 @@ class MainShellScreen(Screen):
         ]
 
         if not matches:
-            self._show_slash_menu("No commands found")
+            self._show_slash_menu_no_results()
             self.slash_matches = []
             self.slash_selected_index = 0
             return
@@ -462,6 +651,36 @@ class MainShellScreen(Screen):
     async def action_toggle_tips_drawer(self) -> None:
         self.tips_visible = not self.tips_visible
         self._render_tips_drawer()
+
+    async def action_toggle_thread_drawer(self) -> None:
+        self.drawer_visible = not self.drawer_visible
+        self._apply_thread_drawer_visibility()
+        state = "shown" if self.drawer_visible else "hidden"
+        self.notify(f"Conversation drawer {state}.")
+
+    async def on_key(self, event: events.Key) -> None:
+        # Some terminals/input states can intercept Ctrl bindings; keep a direct fallback.
+        if event.key in {"ctrl+d", "ctrl+w"}:
+            event.stop()
+            await self.action_toggle_tips_drawer()
+            return
+
+        chat_input = self.query_one("#chat-input", Input)
+        input_value = chat_input.value.strip()
+        slash_visible = "-visible" in self.query_one("#slash-menu", OptionList).classes
+        if not (input_value.startswith("/") and slash_visible and self.slash_matches):
+            return
+
+        if event.key == "up":
+            event.stop()
+            self.slash_selected_index = max(0, self.slash_selected_index - 1)
+            self._render_slash_menu()
+        elif event.key == "down":
+            event.stop()
+            self.slash_selected_index = min(
+                len(self.slash_matches) - 1, self.slash_selected_index + 1
+            )
+            self._render_slash_menu()
 
     async def action_toggle_task_output_details(self) -> None:
         if self.last_task_message is None:
@@ -497,16 +716,26 @@ class MainShellScreen(Screen):
         app = self.app
         assert isinstance(app, OpenHandsCLIApp)
 
-        command_name = raw_text.split()[0][1:].lower()
+        parts = raw_text[1:].strip().split()
+        command_name = parts[0].lower() if parts else ""
+        command_arg = parts[1].lower() if len(parts) > 1 else ""
+        selected_from_menu = False
         if not command_name:
-            self._render_slash_menu()
-            return True
+            if self.slash_matches:
+                selected = self.slash_matches[
+                    max(0, min(self.slash_selected_index, len(self.slash_matches) - 1))
+                ]
+                command_name = selected.name
+                selected_from_menu = True
+            else:
+                self._render_slash_menu()
+                return True
 
         if command_name in {"$", "credits", "cost"}:
             cost_text = app.format_credit_cost()
             self.notify(f"Current credit cost: {cost_text}")
             app.active_thread.messages.append(
-                ChatMessage("assistant", f"Current credit cost: **{cost_text}**")
+                ChatMessage("assistant", app.build_cost_component())
             )
         elif command_name == "help":
             command_help = "\n".join(
@@ -532,7 +761,59 @@ class MainShellScreen(Screen):
             )
         elif command_name == "todo":
             app.active_thread.messages.append(
-                ChatMessage("assistant", f"Task list summary: {app.todo_summary()}")
+                ChatMessage("assistant", app.build_todo_component())
+            )
+        elif command_name == "tips":
+            self.tips_visible = not self.tips_visible
+            state = "shown" if self.tips_visible else "hidden"
+            app.active_thread.messages.append(
+                ChatMessage("assistant", f"Tips drawer is now **{state}**.")
+            )
+        elif command_name in {"fly", "hackers", "city"}:
+            if command_arg in {"on", "show", "start"}:
+                self._set_code_city_scene_enabled(True)
+            elif command_arg in {"off", "hide", "stop"}:
+                self._set_code_city_scene_enabled(False)
+            else:
+                self._set_code_city_scene_enabled(not self.code_city_visible)
+            state = "running" if self.code_city_visible else "hidden"
+            app.active_thread.messages.append(
+                ChatMessage(
+                    "assistant",
+                    "Workspace simulation is now "
+                    f"**{state}**.\n\nUse `/fly on`, `/fly off`, or `/fly toggle`.",
+                )
+            )
+        elif command_name == "components":
+            app.active_thread.messages.append(
+                ChatMessage("assistant", app.build_components_gallery())
+            )
+        elif command_name in {"drawer", "threads"}:
+            if selected_from_menu and not command_arg:
+                self._show_slash_submenu(
+                    command_name="drawer",
+                    subtitle="Drawer options",
+                    options=[
+                        ("show", "Show left conversation drawer"),
+                        ("hide", "Hide left conversation drawer"),
+                        ("toggle", "Toggle drawer"),
+                    ],
+                )
+                return True
+            if command_arg in {"show", "open", "on"}:
+                self.drawer_visible = True
+            elif command_arg in {"hide", "close", "off"}:
+                self.drawer_visible = False
+            else:
+                self.drawer_visible = not self.drawer_visible
+            self._apply_thread_drawer_visibility()
+            state = "shown" if self.drawer_visible else "hidden"
+            app.active_thread.messages.append(
+                ChatMessage(
+                    "assistant",
+                    f"Conversation drawer is now **{state}**.\n\n"
+                    "Usage: `/drawer show`, `/drawer hide`, `/drawer toggle`.",
+                )
             )
         elif command_name == "sample":
             app.active_thread.messages.append(
@@ -555,10 +836,39 @@ class MainShellScreen(Screen):
             self.approval_visible = True
             self.query_one("#approval-options", OptionList).highlighted = 0
         elif command_name == "repo":
-            app.cycle_repo_source()
+            if selected_from_menu and not command_arg:
+                self._show_slash_submenu(
+                    command_name="repo",
+                    subtitle="Repository source",
+                    options=[
+                        ("local", "Set repository source to local"),
+                        ("cloud", "Set repository source to cloud"),
+                        ("toggle", "Toggle repository source"),
+                    ],
+                )
+                return True
+            if command_arg in {"local", "cloud"}:
+                app.repo_source_index = 0 if command_arg == "local" else 1
+            else:
+                app.cycle_repo_source()
             self.notify(f"Repository source set to {app.repo_source}.")
         elif command_name == "model":
-            app.cycle_model()
+            if selected_from_menu and not command_arg:
+                self._show_slash_submenu(
+                    command_name="model",
+                    subtitle="Model options",
+                    options=[
+                        ("gpt", "Use GPT model"),
+                        ("claude", "Use Claude model"),
+                        ("gemini", "Use Gemini model"),
+                        ("toggle", "Cycle to next model"),
+                    ],
+                )
+                return True
+            if command_arg in {"gpt", "claude", "gemini"}:
+                app.model_index = {"gpt": 0, "claude": 1, "gemini": 2}[command_arg]
+            else:
+                app.cycle_model()
             self.notify(f"Model switched to {app.model_name}.")
         elif command_name == "new":
             app.create_thread()
@@ -576,26 +886,116 @@ class MainShellScreen(Screen):
         return True
 
     def _render_slash_menu(self) -> None:
+        option_list = self.query_one("#slash-menu", OptionList)
+        option_list.clear_options()
+
         if not self.slash_matches:
             self._hide_slash_menu()
             return
 
-        lines: list[str] = []
-        for index, command in enumerate(self.slash_matches):
-            prefix = "▸" if index == self.slash_selected_index else " "
-            lines.append(f"{prefix} /{command.name} - {command.description}")
-        lines.append(f"▾ {self.slash_selected_index + 1}/{len(self.slash_matches)}")
-        self._show_slash_menu("\n".join(lines))
+        for command in self.slash_matches:
+            option_list.add_option(
+                Option(f"/{command.name} - {command.description}", id=command.name)
+            )
+        option_list.highlighted = self.slash_selected_index
+        option_list.add_class("-visible")
 
-    def _show_slash_menu(self, content: str) -> None:
-        menu = self.query_one("#slash-menu", Static)
-        menu.update(content)
-        menu.add_class("-visible")
+    def _show_slash_menu_no_results(self) -> None:
+        option_list = self.query_one("#slash-menu", OptionList)
+        option_list.clear_options()
+        option_list.add_option(Option("No commands found", id="none"))
+        option_list.highlighted = 0
+        option_list.add_class("-visible")
 
     def _hide_slash_menu(self) -> None:
-        menu = self.query_one("#slash-menu", Static)
-        menu.update("")
+        menu = self.query_one("#slash-menu", OptionList)
+        menu.clear_options()
         menu.remove_class("-visible")
+
+    def _show_slash_submenu(
+        self, command_name: str, subtitle: str, options: list[tuple[str, str]]
+    ) -> None:
+        self.slash_submenu_command = command_name
+        title = self.query_one("#slash-submenu-title", Static)
+        title.update(subtitle)
+        title.add_class("-visible")
+
+        option_list = self.query_one("#slash-submenu", OptionList)
+        option_list.clear_options()
+        for option_id, text in options:
+            option_list.add_option(Option(text, id=option_id))
+        option_list.highlighted = 0
+        option_list.add_class("-visible")
+
+    def _hide_slash_submenu(self) -> None:
+        self.slash_submenu_command = None
+        title = self.query_one("#slash-submenu-title", Static)
+        title.update("")
+        title.remove_class("-visible")
+        option_list = self.query_one("#slash-submenu", OptionList)
+        option_list.clear_options()
+        option_list.remove_class("-visible")
+
+    @on(OptionList.OptionSelected, "#slash-menu")
+    async def on_slash_menu_selected(self, event: OptionList.OptionSelected) -> None:
+        command_name = event.option_id
+        if command_name in {None, "none"}:
+            return
+
+        if command_name in {"drawer", "threads"}:
+            self._show_slash_submenu(
+                command_name="drawer",
+                subtitle="Drawer options",
+                options=[
+                    ("show", "Show left conversation drawer"),
+                    ("hide", "Hide left conversation drawer"),
+                    ("toggle", "Toggle drawer"),
+                ],
+            )
+            return
+
+        if command_name == "repo":
+            self._show_slash_submenu(
+                command_name="repo",
+                subtitle="Repository source",
+                options=[
+                    ("local", "Set repository source to local"),
+                    ("cloud", "Set repository source to cloud"),
+                    ("toggle", "Toggle repository source"),
+                ],
+            )
+            return
+
+        if command_name == "model":
+            self._show_slash_submenu(
+                command_name="model",
+                subtitle="Model options",
+                options=[
+                    ("gpt", "Use GPT model"),
+                    ("claude", "Use Claude model"),
+                    ("gemini", "Use Gemini model"),
+                    ("toggle", "Cycle to next model"),
+                ],
+            )
+            return
+
+        await self._run_slash_command(f"/{command_name}")
+        self._hide_slash_menu()
+        self.query_one("#chat-input", Input).focus()
+
+    @on(OptionList.OptionSelected, "#slash-submenu")
+    async def on_slash_submenu_selected(self, event: OptionList.OptionSelected) -> None:
+        if event.option_id is None or self.slash_submenu_command is None:
+            return
+        option_arg = event.option_id
+        command_name = self.slash_submenu_command
+        if option_arg == "toggle":
+            await self._run_slash_command(f"/{command_name}")
+        else:
+            await self._run_slash_command(f"/{command_name} {option_arg}")
+        self._hide_slash_submenu()
+        self._hide_slash_menu()
+        self.query_one("#chat-input", Input).focus()
 
 
 class OpenHandsCLIApp(App):
@@ -665,6 +1065,10 @@ class OpenHandsCLIApp(App):
             SlashCommand("init", "Initialize a new repository"),
             SlashCommand("status", "Display conversation details and usage metrics"),
             SlashCommand("todo", "Show task list summary"),
+            SlashCommand("tips", "Show or hide the tips drawer"),
+            SlashCommand("fly", "Toggle 3D code-city fly-through workspace simulation"),
+            SlashCommand("components", "Show sample conversation components gallery"),
+            SlashCommand("drawer", "Show, hide, or toggle the left conversation drawer"),
             SlashCommand("sample", "Show multiline prompt + approval selection sample"),
             SlashCommand("repo", "Switch repository source local/cloud"),
             SlashCommand("model", "Switch active model"),
@@ -715,6 +1119,9 @@ class OpenHandsCLIApp(App):
                 lines.append("")
         return "\n".join(lines)
 
+    def build_todo_component(self) -> str:
+        return f"```text\n{self.build_todo_render()}\n```"
+
     def todo_summary(self) -> str:
         totals = {"done": 0, "in_progress": 0, "blocked": 0, "todo": 0}
         for item in self.todo_items:
@@ -742,6 +1149,44 @@ class OpenHandsCLIApp(App):
 
     def format_credit_cost(self) -> str:
         return f"${self.credit_cost:.3f}"
+
+    def build_cost_component(self) -> str:
+        return f"```text\nCurrent Credit Cost: {self.format_credit_cost()}\n```"
+
+    def build_components_gallery(self) -> str:
+        return (
+            "### Conversation Components Gallery\n\n"
+            "**Task (collapsed)**\n"
+            "```text\n"
+            "Read author-sidebar.module.css\n"
+            "(Ctrl-S to show details)\n"
+            "```\n\n"
+            "**Task (expanded output)**\n"
+            "```text\n"
+            "$ cat -n src/components/author-sidebar/author-sidebar.module.css\n"
+            "1 .sidebar { width: 300px; }\n"
+            "2 .avatar { width: 70px; }\n"
+            "...\n"
+            "(esc to cancel • 32s, Ctrl-S to hide details)\n"
+            "```\n\n"
+            "**Approval Prompt**\n"
+            "```text\n"
+            "Proceed with action?\n"
+            "1. Yes, allow once\n"
+            "2. No\n"
+            "3. Always\n"
+            "```\n\n"
+            "**Plan / Todo Object**\n"
+            f"{self.build_todo_component()}\n\n"
+            "**Cost Object**\n"
+            f"{self.build_cost_component()}\n\n"
+            "**Process Object**\n"
+            "```text\n"
+            "Agent running...\n"
+            "Step 1/3 scan files → Step 2/3 refactor → Step 3/3 verify tests\n"
+            "Status: in progress\n"
+            "```"
+        )
 
     def set_active_thread(self, thread_id: str) -> None:
         if thread_id in self.threads:
