@@ -134,12 +134,21 @@ OptionList:focus > .option-list--option-highlighted {
     display: block;
 }
 
-#status-footer {
+#input-status-row {
+    width: 1fr;
     height: auto;
-    border-top: solid #555555;
+    margin: 0 1 0 1;
+    padding: 0 1;
+    background: #000000;
+}
+
+#status-footer {
+    width: 1fr;
+    height: auto;
+    border: none;
     background: #000000;
     color: #f2f2f2;
-    padding: 0 1;
+    padding: 0;
 }
 
 #workspace {
@@ -301,7 +310,7 @@ OptionList:focus > .option-list--option-highlighted {
 }
 
 #chat-input {
-    margin: 0 1 1 1;
+    margin: 0 1 0 1;
     border: round #8a8a8a;
     background: #000000;
     color: #f2f2f2;
@@ -316,6 +325,15 @@ OptionList:focus > .option-list--option-highlighted {
     border: round #c8c8c8;
     background: #050505;
     color: white;
+}
+
+#input-context-status {
+    width: auto;
+    height: auto;
+    margin: 0;
+    padding: 0;
+    color: #c0c0c0;
+    content-align: right middle;
 }
 
 #tips-drawer {
@@ -409,4 +427,13 @@ OptionList:focus > .option-list--option-highlighted {
 
 Footer {
     background: #000000;
+}
+
+ToastRack {
+    margin-bottom: 0;
+}
+
+Toast {
+    margin-top: 0;
+    padding: 0 1;
 }

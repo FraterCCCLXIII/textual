@@ -100,7 +100,6 @@ class OnboardingScreen(Screen):
         ("down,j", "cursor_down", "Down"),
         ("enter", "confirm", "Select"),
         ("space", "confirm", "Select"),
-        ("ctrl+p", "app.command_palette", "Commands"),
     ]
 
     STEP_ONE_OPTIONS = [
@@ -294,7 +293,6 @@ class MainShellScreen(Screen):
     """Main shell with thread list, conversation view, and bottom input."""
 
     BINDINGS = [
-        ("ctrl+p", "app.command_palette", "Commands"),
         ("ctrl+l", "toggle_thread_drawer", "Drawer"),
         ("ctrl+n", "new_thread", "New Thread"),
         ("ctrl+r", "cycle_repo_source", "Repo"),
@@ -337,10 +335,12 @@ class MainShellScreen(Screen):
                 placeholder="Type a request (or @path/to/file), then press Enter",
                 id="chat-input",
             )
+            with Horizontal(id="input-status-row"):
+                yield Static(id="status-footer")
+                yield Static("ctx N/A • $ 0.00 (↑ 0 ↓ 0 cache N/A)", id="input-context-status")
             yield OptionList(id="slash-menu", compact=True)
             yield Static(id="slash-submenu-title")
             yield OptionList(id="slash-submenu", compact=True)
-            yield Static(id="status-footer")
             yield Footer()
 
     async def on_mount(self) -> None:
@@ -406,9 +406,9 @@ class MainShellScreen(Screen):
         repo_name = thread.repository.rstrip("/").split("/")[-1] or thread.repository
         branch_name = app.branch_name
         self.query_one("#status-footer", Static).update(
-            f"📦 {repo_name}  |  "
-            f"⎇ {branch_name}  |  "
-            f"Model: {app.model_name}"
+            f"<> {repo_name}  "
+            f"⎇ {branch_name}  "
+            f"✦ Model: {app.model_name}"
         )
 
     def _render_tips_drawer(self) -> None:
@@ -421,7 +421,7 @@ class MainShellScreen(Screen):
         tips = (
             "Tips (Ctrl-D/Ctrl-W to dismiss)\n\n"
             "• Use /help or / to browse available commands.\n\n"
-            "• Use Ctrl+P for command lookup and fuzzy actions.\n\n"
+            "• Use Ctrl+P to open Commands and run fuzzy actions.\n\n"
             "• Mention a file path like @src/app.py to scope analysis.\n\n"
             "• Use /tips to toggle this drawer."
         )
@@ -991,6 +991,12 @@ class MainShellScreen(Screen):
             app.active_thread.messages.append(
                 ChatMessage("assistant", app.build_cost_component())
             )
+        elif command_name in {"commands", "cmd", "menu"}:
+            app.action_command_palette()
+            return True
+        elif command_name in {"details", "detail"}:
+            await self.action_toggle_task_output_details()
+            return True
         elif command_name == "help":
             command_help = "\n".join(
                 f"- `/{command.name}` - {command.description}"
@@ -1023,6 +1029,11 @@ class MainShellScreen(Screen):
             app.active_thread.messages.append(
                 ChatMessage("assistant", f"Tips drawer is now **{state}**.")
             )
+        elif command_name in {"theme", "dark", "light"}:
+            await self.app.run_action("app.toggle_dark")
+            theme = "dark" if self.app.dark else "light"
+            self.notify(f"Theme switched to {theme}.")
+            return True
         elif command_name in {"fly", "hackers", "city"}:
             if command_arg in {"on", "show", "start"}:
                 self._set_code_city_scene_enabled(True)
@@ -1142,6 +1153,18 @@ class MainShellScreen(Screen):
         elif command_name == "new":
             app.create_thread()
             self.notify("Created a new conversation thread.")
+        elif command_name == "local":
+            app.execute_mock_command("connect_local")
+            return True
+        elif command_name == "cloud":
+            app.execute_mock_command("connect_cloud")
+            return True
+        elif command_name in {"examples", "example"}:
+            app.execute_mock_command("show_examples")
+            return True
+        elif command_name in {"startup", "start"}:
+            app.execute_mock_command("go_startup")
+            return True
         elif command_name == "exit":
             app.exit()
             return True
@@ -1273,6 +1296,7 @@ class OpenHandsCLIApp(App):
     CSS_PATH = "openhands_cli.tcss"
     TITLE = "OpenHands CLI"
     SUB_TITLE = "Clickable design prototype"
+    COMMAND_PALETTE_DISPLAY = "Commands"
 
     COMMANDS = App.COMMANDS | {OpenHandsCommandProvider}
     SCREENS = {"startup": OnboardingScreen, "main": MainShellScreen}
@@ -1317,25 +1341,28 @@ class OpenHandsCLIApp(App):
     @property
     def command_entries(self) -> list[tuple[str, str, str]]:
         return [
-            ("connect_local", "Connect local repository", "Switch repo source to local"),
-            ("connect_cloud", "Connect cloud repository", "Switch repo source to cloud"),
-            ("new_thread", "Create new conversation thread", "Start a fresh planning thread"),
-            ("switch_model", "Switch active model", "Rotate to next mocked LLM"),
-            ("show_examples", "Load conversation examples", "Focus on pre-seeded examples"),
-            ("go_startup", "Return to startup screen", "Navigate back to splash/start page"),
+            ("connect_local", "Connect local repository (^l)", "Switch repo source to local"),
+            ("connect_cloud", "Connect cloud repository (^c)", "Switch repo source to cloud"),
+            ("new_thread", "Create new conversation thread (^n)", "Start a fresh planning thread"),
+            ("switch_model", "Switch active model (^m)", "Rotate to next mocked LLM"),
+            ("show_examples", "Load conversation examples (^e)", "Focus on pre-seeded examples"),
+            ("go_startup", "Return to startup screen (^g)", "Navigate back to splash/start page"),
         ]
 
     @property
     def slash_commands(self) -> list[SlashCommand]:
         return [
             SlashCommand("$", "Show current credit use"),
+            SlashCommand("commands", "Open the Commands menu (Ctrl+P)"),
             SlashCommand("cost", "Display current credit cost"),
+            SlashCommand("details", "Toggle expanded task output details"),
             SlashCommand("exit", "Exit the application"),
             SlashCommand("help", "Display available commands"),
             SlashCommand("init", "Initialize a new repository"),
             SlashCommand("status", "Display conversation details and usage metrics"),
             SlashCommand("todo", "Show task list summary"),
             SlashCommand("tips", "Show or hide the tips drawer"),
+            SlashCommand("theme", "Toggle light/dark theme"),
             SlashCommand("fly", "Toggle 3D code-city fly-through workspace simulation"),
             SlashCommand("board", "Show/hide PR Kanban board linked to conversations"),
             SlashCommand("components", "Show sample conversation components gallery"),
@@ -1344,6 +1371,10 @@ class OpenHandsCLIApp(App):
             SlashCommand("repo", "Switch repository source local/cloud"),
             SlashCommand("model", "Switch active model"),
             SlashCommand("new", "Create a new conversation thread"),
+            SlashCommand("local", "Connect local repository (from command palette)"),
+            SlashCommand("cloud", "Connect cloud repository (from command palette)"),
+            SlashCommand("examples", "Load conversation examples (from command palette)"),
+            SlashCommand("startup", "Return to startup screen (from command palette)"),
         ]
 
     def on_mount(self) -> None:
@@ -1509,7 +1540,7 @@ class OpenHandsCLIApp(App):
                 "UI pattern proposal:\n"
                 "- Startup hero with clear CTA.\n"
                 "- Persistent bottom input.\n"
-                "- Command lookup via Ctrl+P.\n"
+                "- Commands menu via Ctrl+P.\n"
                 "- Multi-thread conversation context."
             )
         return (
