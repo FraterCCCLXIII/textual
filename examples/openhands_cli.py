@@ -1,1684 +1,508 @@
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass, field
-from functools import partial
-import math
-from pathlib import Path
-import random
-import re
+from datetime import datetime
 from uuid import uuid4
 
-from textual import events, on
+from textual import on
 from textual.app import App, ComposeResult
-from textual.command import Hit, Hits, Provider
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
 from textual.screen import Screen
-from textual.widgets import Footer, Input, Markdown, OptionList, Static
+from textual.widgets import Button, Input, OptionList, Static
 from textual.widgets.option_list import Option
-from markdown_it import MarkdownIt
-from rich.text import Text
 
-LOGO = r"""
-    ███████                                  █████   █████                          █████        
-  ███░░░░░███                               ░░███   ░░███                          ░░███         
- ███     ░░███ ████████   ██████  ████████   ░███    ░███   ██████   ████████    ███████   █████ 
-░███      ░███░░███░░███ ███░░███░░███░░███  ░███████████  ░░░░░███ ░░███░░███  ███░░███  ███░░  
-░███      ░███ ░███ ░███░███████  ░███ ░███  ░███░░░░░███   ███████  ░███ ░███ ░███ ░███ ░░█████ 
-░░███     ███  ░███ ░███░███░░░   ░███ ░███  ░███    ░███  ███░░███  ░███ ░███ ░███ ░███  ░░░░███
- ░░░███████░   ░███████ ░░██████  ████ █████ █████   █████░░████████ ████ █████░░████████ ██████ 
-   ░░░░░░░     ░███░░░   ░░░░░░  ░░░░ ░░░░░ ░░░░░   ░░░░░  ░░░░░░░░ ░░░░ ░░░░░  ░░░░░░░░ ░░░░░░  
-               ░███                                                                              
-               █████                                                                             
-              ░░░░░                                                                              
-"""
+try:
+    # Module-style execution: python -m examples.openhands_cli
+    from .components.splitter import PaneSplitter
+except ImportError:
+    # Script-style execution: python examples/openhands_cli.py
+    import sys as _sys
+    from pathlib import Path as _Path
 
-
-def markdown_parser_no_linkify() -> MarkdownIt:
-    """Create a markdown parser that does not require linkify-it-py."""
-    return MarkdownIt("commonmark", {"linkify": False})
+    _sys.path.append(str(_Path(__file__).resolve().parent))
+    from components.splitter import PaneSplitter
 
 
 @dataclass
-class ChatMessage:
-    role: str
-    content: str
-
-
-@dataclass
-class ConversationThread:
-    thread_id: str
+class Conversation:
+    conversation_id: str
     title: str
-    repository: str
-    messages: list[ChatMessage] = field(default_factory=list)
+    preview: str
+    updated_at: str
+    messages: list[tuple[str, str]] = field(default_factory=list)
 
 
-@dataclass(frozen=True)
-class SlashCommand:
-    name: str
-    description: str
+class LoginScreen(Screen):
+    BINDINGS = [("enter", "continue_to_dashboard", "Continue")]
 
-
-@dataclass
-class OnboardingOption:
-    label: str
-    detail: str = ""
-
-
-@dataclass
-class TodoItem:
-    title: str
-    todo_id: str
-    status: str
-    reason: str = ""
-
-
-class OpenHandsCommandProvider(Provider):
-    """Mock commands for command lookup in the prototype."""
-
-    async def search(self, query: str) -> Hits:
-        matcher = self.matcher(query)
-        app = self.app
-        assert isinstance(app, OpenHandsCLIApp)
-
-        for command_id, label, help_text in app.command_entries:
-            score = matcher.match(label)
-            if score > 0:
-                yield Hit(
-                    score,
-                    matcher.highlight(label),
-                    partial(app.execute_mock_command, command_id),
-                    help=help_text,
+    def compose(self) -> ComposeResult:
+        with Container(id="login-shell"):
+            with Vertical(id="login-card"):
+                yield Static("OpenHands", id="login-title")
+                yield Static("Monochrome IDE Demo", id="login-subtitle")
+                yield Input(placeholder="Email", id="login-email")
+                yield Input(password=True, placeholder="Password", id="login-password")
+                with Horizontal(id="login-actions"):
+                    yield Button("Sign In", id="login-signin")
+                    yield Button("Continue as Guest", id="login-guest")
+                yield Static(
+                    "Visual prototype only. No auth calls are performed.",
+                    id="login-note",
                 )
 
+    def action_continue_to_dashboard(self) -> None:
+        app = self.app
+        assert isinstance(app, OpenHandsDemoApp)
+        app.show_dashboard()
 
-class OnboardingScreen(Screen):
-    """Startup + onboarding flow screen."""
+    @on(Button.Pressed, "#login-signin")
+    def on_sign_in_pressed(self) -> None:
+        self.action_continue_to_dashboard()
 
+    @on(Button.Pressed, "#login-guest")
+    def on_guest_pressed(self) -> None:
+        self.action_continue_to_dashboard()
+
+
+class DashboardScreen(Screen):
     BINDINGS = [
-        ("up,k", "cursor_up", "Up"),
-        ("down,j", "cursor_down", "Down"),
-        ("enter", "confirm", "Select"),
-        ("space", "confirm", "Select"),
-        ("ctrl+p", "app.command_palette", "Commands"),
+        ("n", "new_conversation", "New Conversation"),
+        ("enter", "open_workspace", "Open"),
     ]
 
-    STEP_ONE_OPTIONS = [
-        OnboardingOption(
-            "Connect to OpenHands ($20 free credits for new users)",
-            "Available models: claude-sonnet-4, gpt-5, gemini-2.5-pro, and more",
-        ),
-        OnboardingOption(
-            "Use your own LLM Provider",
-            "Available providers: anthropic, openai, mistral",
-        ),
-        OnboardingOption("Exit", "See you later!"),
-    ]
+    def compose(self) -> ComposeResult:
+        with Container(id="dashboard-shell"):
+            with Vertical(id="dashboard-hero"):
+                yield Static("Dashboard", classes="section-title")
+                yield Static(
+                    "Pick a conversation or start a new one.",
+                    id="dashboard-subtitle",
+                )
+                with Horizontal(id="dashboard-actions"):
+                    yield Button("New Conversation", id="dashboard-new")
+                    yield Button("Open Selected", id="dashboard-open")
+            with Horizontal(id="dashboard-grid"):
+                with Vertical(classes="panel", id="dashboard-conversations-panel"):
+                    yield Static("Recent Conversations", classes="panel-title")
+                    yield OptionList(id="dashboard-conversations")
+                with Vertical(classes="panel", id="dashboard-summary-panel"):
+                    yield Static("Workspace Summary", classes="panel-title")
+                    yield Static(id="dashboard-summary")
 
-    STEP_TWO_OPTIONS = [
-        OnboardingOption("Yes, proceed (Y)"),
-        OnboardingOption("No, exit (N)"),
+    def on_mount(self) -> None:
+        self._render_conversations()
+        self._render_summary()
+
+    def _render_conversations(self) -> None:
+        app = self.app
+        assert isinstance(app, OpenHandsDemoApp)
+        options = [
+            Option(
+                f"{conv.title}\n{conv.preview}\n{conv.updated_at}",
+                id=conv.conversation_id,
+            )
+            for conv in app.conversations
+        ]
+        option_list = self.query_one("#dashboard-conversations", OptionList)
+        option_list.clear_options()
+        option_list.add_options(options)
+        option_list.highlighted = app.active_conversation_index
+
+    def _render_summary(self) -> None:
+        app = self.app
+        assert isinstance(app, OpenHandsDemoApp)
+        active = app.active_conversation
+        summary = (
+            "Mode: full featured AI IDE (demo)\n\n"
+            f"Conversations: {len(app.conversations)}\n"
+            "Layout: left drawer + chat + canvas\n"
+            "Theme: monochrome black/white\n"
+            f"Selected: {active.title}"
+        )
+        self.query_one("#dashboard-summary", Static).update(summary)
+
+    @on(OptionList.OptionSelected, "#dashboard-conversations")
+    def on_conversation_selected(self, event: OptionList.OptionSelected) -> None:
+        if event.option_id is None:
+            return
+        app = self.app
+        assert isinstance(app, OpenHandsDemoApp)
+        app.set_active_conversation(event.option_id)
+        self._render_summary()
+
+    def action_new_conversation(self) -> None:
+        app = self.app
+        assert isinstance(app, OpenHandsDemoApp)
+        app.create_conversation()
+        app.show_workspace()
+
+    def action_open_workspace(self) -> None:
+        app = self.app
+        assert isinstance(app, OpenHandsDemoApp)
+        app.show_workspace()
+
+    @on(Button.Pressed, "#dashboard-new")
+    def on_dashboard_new(self) -> None:
+        self.action_new_conversation()
+
+    @on(Button.Pressed, "#dashboard-open")
+    def on_dashboard_open(self) -> None:
+        self.action_open_workspace()
+
+
+class WorkspaceScreen(Screen):
+    BINDINGS = [
+        ("ctrl+b", "back_to_dashboard", "Back"),
+        ("1", "show_changes", "Changes"),
+        ("2", "show_tasks", "Tasks"),
+        ("3", "show_plans", "Plans"),
+        ("4", "show_files", "Files"),
     ]
 
     def __init__(self) -> None:
         super().__init__()
-        self.step = 1
-        self.selected_index = 0
-        self.logo_time = 0.0
-        rng = random.Random(57)
-        self.logo_blobs: list[dict[str, float]] = [
-            {
-                "phase": rng.uniform(0.0, math.tau),
-                "speed_x": rng.uniform(0.55, 1.1),
-                "speed_y": rng.uniform(0.45, 1.0),
-                "radius": rng.uniform(0.16, 0.34),
-                "strength": rng.uniform(0.9, 1.4),
-            }
-            for _ in range(6)
-        ]
+        self.active_canvas_tab = "changes"
+        self.conversations_visible = True
 
     def compose(self) -> ComposeResult:
-        with Container(id="startup-shell"):
-            yield Static(LOGO, id="startup-logo")
-            yield Static("OpenHands CLI v0.57.0", id="startup-version")
-            yield Static("No settings found — let's set you up!", id="startup-pill")
-            yield Static(id="onboarding-main-card")
-            yield Static(id="onboarding-choice-card")
-            yield Static("Use ↑/↓ to navigate and Enter to continue", id="startup-call-to-action")
+        with Container(id="workspace-shell"):
+            with Horizontal(id="workspace-header"):
+                yield Static("OpenHands IDE", id="workspace-title")
+                yield Static("Login > Dashboard > New Conversation", id="workspace-crumbs")
+                yield Button("Back", id="workspace-back")
+            with Horizontal(id="workspace-columns"):
+                with Vertical(id="conversations-pane", classes="panel"):
+                    with Horizontal(classes="panel-head"):
+                        yield Static(
+                            "Conversations",
+                            classes="panel-title",
+                            id="conversations-head-title",
+                        )
+                        yield Button("←", id="workspace-hide-conversations")
+                    yield OptionList(id="workspace-conversations")
+                yield PaneSplitter(
+                    target_pane_id="conversations-pane",
+                    min_width=24,
+                    max_width=56,
+                    id="splitter-left",
+                )
+                with Vertical(id="chat-pane", classes="panel"):
+                    yield Static("Chat", classes="panel-title")
+                    yield VerticalScroll(id="chat-scroll")
+                    with Horizontal(id="chat-composer"):
+                        yield Input(
+                            placeholder="Type your request... (demo only)",
+                            id="chat-input",
+                        )
+                        yield Button("Send", id="chat-send")
+                yield PaneSplitter(
+                    target_pane_id="chat-pane",
+                    min_width=40,
+                    max_width=96,
+                    id="splitter-right",
+                )
+                with Vertical(id="canvas-pane", classes="panel"):
+                    yield Static("Canvas", classes="panel-title")
+                    with Horizontal(id="canvas-tabs"):
+                        yield Button("Changes", id="tab-changes", classes="canvas-tab")
+                        yield Button("Tasks", id="tab-tasks", classes="canvas-tab")
+                        yield Button("Plans", id="tab-plans", classes="canvas-tab")
+                        yield Button("Files", id="tab-files", classes="canvas-tab")
+                    yield Static(id="canvas-content")
 
     def on_mount(self) -> None:
-        self._update_logo_animation()
-        self.logo_timer = self.set_interval(1 / 20, self._update_logo_animation)
-        self._render_step()
-
-    def on_unmount(self) -> None:
-        self.logo_timer.stop()
-
-    def action_cursor_up(self) -> None:
-        options = self.STEP_ONE_OPTIONS if self.step == 1 else self.STEP_TWO_OPTIONS
-        self.selected_index = (self.selected_index - 1) % len(options)
-        self._render_step()
-
-    def action_cursor_down(self) -> None:
-        options = self.STEP_ONE_OPTIONS if self.step == 1 else self.STEP_TWO_OPTIONS
-        self.selected_index = (self.selected_index + 1) % len(options)
-        self._render_step()
-
-    def action_confirm(self) -> None:
-        app = self.app
-        assert isinstance(app, OpenHandsCLIApp)
-        if self.step == 1:
-            if self.selected_index == 2:
-                app.exit()
-                return
-            app.provider_choice = (
-                "OpenHands" if self.selected_index == 0 else "Custom Provider"
-            )
-            self.step = 2
-            self.selected_index = 0
-            self.query_one("#startup-pill", Static).update("Step 1 complete")
-            self._render_step()
-            return
-
-        if self.selected_index == 1:
-            app.exit()
-            return
-
-        app.complete_onboarding()
-        self.query_one("#startup-pill", Static).update("All set up!")
-        app.show_main_screen()
-
-    def _render_step(self) -> None:
-        if self.step == 1:
-            self._render_step_one()
-        else:
-            self._render_step_two()
-
-    def _render_step_one(self) -> None:
-        card = (
-            "Step 1\n\n"
-            "Select your LLM Provider\n\n"
-            f"{self._format_options(self.STEP_ONE_OPTIONS)}"
-        )
-        self.query_one("#onboarding-main-card", Static).update(card)
-        self.query_one("#onboarding-choice-card", Static).update("")
-        self.query_one("#onboarding-choice-card", Static).remove_class("-visible")
-
-    def _render_step_two(self) -> None:
-        cwd = str(Path.cwd())
-        main_card = (
-            "Step 2\n\n"
-            "Do you trust the files in this folder?\n\n"
-            f"{cwd}\n\n"
-            "OpenHands may read and execute files in this folder with your permission."
-        )
-        choice_card = "Do you wish to continue?\n\n" + self._format_options(
-            self.STEP_TWO_OPTIONS
-        )
-        self.query_one("#onboarding-main-card", Static).update(main_card)
-        self.query_one("#onboarding-choice-card", Static).update(choice_card)
-        self.query_one("#onboarding-choice-card", Static).add_class("-visible")
-
-    def _update_logo_animation(self) -> None:
-        lines = LOGO.splitlines()
-        max_width = max(len(line) for line in lines) if lines else 1
-        max_height = max(len(lines), 1)
-        animated_logo = Text()
-        for line_index, line in enumerate(lines):
-            for char_index, char in enumerate(line):
-                if char.isspace():
-                    animated_logo.append(char)
-                    continue
-                nx = char_index / max(max_width - 1, 1)
-                ny = line_index / max(max_height - 1, 1)
-
-                # Add fluid motion so color blobs appear to intersect organically.
-                wx = nx + 0.08 * math.sin(self.logo_time * 0.8 + ny * 8.5)
-                wy = ny + 0.08 * math.cos(self.logo_time * 0.65 + nx * 7.2)
-
-                luminance_mix = 0.0
-                weight_total = 0.0
-
-                for blob in self.logo_blobs:
-                    cx = 0.5 + 0.38 * math.sin(self.logo_time * blob["speed_x"] + blob["phase"])
-                    cy = 0.5 + 0.32 * math.cos(
-                        self.logo_time * blob["speed_y"] + blob["phase"] * 1.13
-                    )
-                    dx = wx - cx
-                    dy = wy - cy
-                    dist2 = dx * dx + dy * dy
-                    radius = blob["radius"]
-                    influence = math.exp(-dist2 / max(radius * radius, 1e-5))
-                    weight = influence * blob["strength"]
-
-                    pulse = 0.55 + 0.45 * math.sin(
-                        self.logo_time * 1.1 + blob["phase"] + nx * 4.5 - ny * 3.8
-                    )
-                    luminance_mix += pulse * weight
-                    weight_total += weight
-
-                if weight_total == 0:
-                    luminance = 0.74
-                else:
-                    luminance = min(max(0.35 + 0.65 * (luminance_mix / weight_total), 0.24), 1.0)
-
-                # Keep organic movement while remaining monochrome.
-                luminance *= 0.9 + 0.18 * (
-                    0.5
-                    + 0.5
-                    * math.sin(self.logo_time * 2.3 + char_index * 0.67 + line_index * 0.91)
-                )
-                gray = int(min(max(luminance, 0.0), 1.0) * 255)
-                animated_logo.append(
-                    char,
-                    style=f"bold rgb({gray},{gray},{gray})",
-                )
-            animated_logo.append("\n")
-
-        self.logo_time += 0.06
-        self.query_one("#startup-logo", Static).update(animated_logo)
-
-    def _format_options(self, options: list[OnboardingOption]) -> str:
-        lines: list[str] = []
-        for index, option in enumerate(options, start=1):
-            prefix = ">" if (index - 1) == self.selected_index else " "
-            lines.append(f"{prefix} {index}. {option.label}")
-            if option.detail:
-                lines.append(f"   {option.detail}")
-            if index < len(options):
-                lines.append("")
-        return "\n".join(lines)
-
-
-class MainShellScreen(Screen):
-    """Main shell with thread list, conversation view, and bottom input."""
-
-    BINDINGS = [
-        ("ctrl+p", "app.command_palette", "Commands"),
-        ("ctrl+l", "toggle_thread_drawer", "Drawer"),
-        ("ctrl+n", "new_thread", "New Thread"),
-        ("ctrl+r", "cycle_repo_source", "Repo"),
-        ("ctrl+m", "cycle_model", "Model"),
-        ("ctrl+s", "toggle_task_output_details", "Details"),
-        ("ctrl+d,ctrl+w", "toggle_tips_drawer", "Tips"),
-        ("ctrl+t", "app.toggle_dark", "Theme"),
-    ]
-
-    def compose(self) -> ComposeResult:
-        with Container(id="main-shell"):
-            with Horizontal(id="workspace"):
-                with Horizontal(id="workspace-columns"):
-                    with Vertical(id="thread-panel"):
-                        yield Static("Conversations", classes="panel-title")
-                        yield OptionList(id="threads", compact=True)
-                    with Vertical(id="chat-panel"):
-                        with VerticalScroll(id="chat-view"):
-                            pass
-                with Container(id="board-view"):
-                    with Horizontal(id="board-columns"):
-                        with Vertical(classes="board-column"):
-                            yield Static("OPEN", classes="board-column-title")
-                            yield OptionList(id="board-open-list", classes="board-list", compact=True)
-                        with Vertical(classes="board-column"):
-                            yield Static("REVIEW", classes="board-column-title")
-                            yield OptionList(
-                                id="board-review-list", classes="board-list", compact=True
-                            )
-                        with Vertical(classes="board-column"):
-                            yield Static("MERGED", classes="board-column-title")
-                            yield OptionList(
-                                id="board-merged-list", classes="board-list", compact=True
-                            )
-                yield Static(id="fly-view")
-            yield Static(id="tips-drawer")
-            yield Static("Proceed with action?", id="approval-title")
-            yield OptionList(id="approval-options", compact=True)
-            yield Input(
-                placeholder="Type a request (or @path/to/file), then press Enter",
-                id="chat-input",
-            )
-            yield OptionList(id="slash-menu", compact=True)
-            yield Static(id="slash-submenu-title")
-            yield OptionList(id="slash-submenu", compact=True)
-            yield Static(id="status-footer")
-            yield Footer()
-
-    async def on_mount(self) -> None:
-        self.query_one("#chat-view", VerticalScroll).anchor()
-        self.slash_matches: list[SlashCommand] = []
-        self.slash_selected_index = 0
-        self.slash_submenu_command: str | None = None
-        self.drawer_visible = True
-        self.tips_visible = False
-        self.approval_visible = False
-        self.task_output_expanded = True
-        self.last_task_prompt = ""
-        self.last_task_message: ChatMessage | None = None
-        self.code_city_visible = False
-        self.kanban_visible = False
-        self.code_city_phase = 0.0
-        self.code_city_timer = None
-        self.code_city_towers = self._build_code_city_towers()
-        self.board_task_to_thread: dict[str, str] = {}
-        self.code_city_loop_length = max(
-            (tower["z"] + tower["depth"] for tower in self.code_city_towers),
-            default=240.0,
-        ) + 12.0
-        await self.sync_from_app_state()
+        self._apply_conversations_visibility()
+        self._render_conversations()
+        self._render_chat()
+        self._render_canvas()
         self.query_one("#chat-input", Input).focus()
-        self._hide_slash_menu()
-        self._hide_slash_submenu()
-        self._setup_approval_options()
-        self._render_kanban_board()
-        self._apply_thread_drawer_visibility()
-        self._apply_workspace_mode()
-        self._render_code_city_scene()
 
-    def on_unmount(self) -> None:
-        if self.code_city_timer is not None:
-            self.code_city_timer.stop()
-            self.code_city_timer = None
-
-    async def sync_from_app_state(self) -> None:
-        self._render_thread_list()
-        self._render_status_line()
-        self._render_tips_drawer()
-        self._render_approval_prompt()
-        self._render_kanban_board()
-        await self._render_active_thread()
-
-    def _render_thread_list(self) -> None:
+    def action_back_to_dashboard(self) -> None:
         app = self.app
-        assert isinstance(app, OpenHandsCLIApp)
-        option_list = self.query_one("#threads", OptionList)
-        option_list.clear_options()
-        options = [
-            Option(f"{thread.title}\n{thread.repository}", id=thread.thread_id)
-            for thread in app.ordered_threads
-        ]
-        option_list.add_options(options)
-        option_list.highlighted = app.active_thread_index
+        assert isinstance(app, OpenHandsDemoApp)
+        app.show_dashboard()
 
-    def _render_status_line(self) -> None:
+    def action_show_changes(self) -> None:
+        self._set_canvas_tab("changes")
+
+    def action_show_tasks(self) -> None:
+        self._set_canvas_tab("tasks")
+
+    def action_show_plans(self) -> None:
+        self._set_canvas_tab("plans")
+
+    def action_show_files(self) -> None:
+        self._set_canvas_tab("files")
+
+    @on(Button.Pressed, "#workspace-back")
+    def on_back_pressed(self) -> None:
+        self.action_back_to_dashboard()
+
+    @on(Button.Pressed, "#workspace-hide-conversations")
+    def on_hide_conversations_pressed(self) -> None:
+        self._set_conversations_visible(False)
+
+    @on(OptionList.OptionSelected, "#workspace-conversations")
+    def on_workspace_conversation_selected(self, event: OptionList.OptionSelected) -> None:
+        if event.option_id is None:
+            return
         app = self.app
-        assert isinstance(app, OpenHandsCLIApp)
-        thread = app.active_thread
-        repo_name = thread.repository.rstrip("/").split("/")[-1] or thread.repository
-        branch_name = app.branch_name
-        self.query_one("#status-footer", Static).update(
-            f"📦 {repo_name}  |  "
-            f"⎇ {branch_name}  |  "
-            f"Model: {app.model_name}"
+        assert isinstance(app, OpenHandsDemoApp)
+        app.set_active_conversation(event.option_id)
+        self._render_chat()
+        self._render_canvas()
+
+    @on(Input.Submitted, "#chat-input")
+    def on_chat_submitted(self, event: Input.Submitted) -> None:
+        self._send_message(event.value)
+        event.input.clear()
+
+    @on(Button.Pressed, "#chat-send")
+    def on_chat_send_pressed(self) -> None:
+        input_widget = self.query_one("#chat-input", Input)
+        self._send_message(input_widget.value)
+        input_widget.clear()
+        input_widget.focus()
+
+    @on(Button.Pressed, ".canvas-tab")
+    def on_canvas_tab_pressed(self, event: Button.Pressed) -> None:
+        tab_id = event.button.id or ""
+        self._set_canvas_tab(tab_id.replace("tab-", ""))
+
+    def _send_message(self, text: str) -> None:
+        content = text.strip()
+        if not content:
+            return
+        if self._run_workspace_command(content):
+            return
+        app = self.app
+        assert isinstance(app, OpenHandsDemoApp)
+        active = app.active_conversation
+        active.messages.append(("user", content))
+        active.messages.append(
+            (
+                "assistant",
+                "Demo response: drafting plan, inspecting files, and preparing changes.",
+            )
         )
+        active.preview = content[:42] + ("..." if len(content) > 42 else "")
+        active.updated_at = "Updated just now"
+        self._render_chat()
+        self._render_conversations()
+        self._render_canvas()
 
-    def _render_tips_drawer(self) -> None:
-        drawer = self.query_one("#tips-drawer", Static)
-        if not self.tips_visible:
-            drawer.update("")
-            drawer.remove_class("-visible")
-            return
+    def _run_workspace_command(self, content: str) -> bool:
+        app = self.app
+        assert isinstance(app, OpenHandsDemoApp)
+        if not content.startswith("/"):
+            return False
 
-        tips = (
-            "Tips (Ctrl-D/Ctrl-W to dismiss)\n\n"
-            "• Use /help or / to browse available commands.\n\n"
-            "• Use Ctrl+P for command lookup and fuzzy actions.\n\n"
-            "• Mention a file path like @src/app.py to scope analysis.\n\n"
-            "• Use /tips to toggle this drawer."
+        parts = content[1:].split()
+        command = parts[0].lower() if parts else ""
+        arg = parts[1].lower() if len(parts) > 1 else ""
+
+        if command != "conversations":
+            return False
+
+        if arg in {"show", "on", "open"}:
+            visible = True
+        elif arg in {"hide", "off", "close"}:
+            visible = False
+        else:
+            visible = not self.conversations_visible
+
+        self._set_conversations_visible(visible)
+        state = "visible" if self.conversations_visible else "hidden"
+        app.active_conversation.messages.append(
+            ("assistant", f"Conversation drawer is now {state}.")
         )
-        drawer.update(tips)
-        drawer.add_class("-visible")
+        self._render_chat()
+        self._render_canvas()
+        return True
 
-    def _apply_thread_drawer_visibility(self) -> None:
-        if self.code_city_visible or self.kanban_visible:
-            return
-        panel = self.query_one("#thread-panel", Vertical)
-        panel.styles.display = "block" if self.drawer_visible else "none"
+    def _set_conversations_visible(self, visible: bool) -> None:
+        self.conversations_visible = visible
+        self._apply_conversations_visibility()
 
-    def _apply_workspace_mode(self) -> None:
-        columns = self.query_one("#workspace-columns", Horizontal)
-        board = self.query_one("#board-view", Container)
-        flythrough = self.query_one("#fly-view", Static)
-        if self.code_city_visible:
-            columns.styles.display = "none"
-            board.remove_class("-visible")
-            flythrough.add_class("-visible")
-            return
-        if self.kanban_visible:
-            columns.styles.display = "none"
-            flythrough.remove_class("-visible")
-            board.add_class("-visible")
-            self.query_one("#board-open-list", OptionList).focus()
-            return
-        columns.styles.display = "block"
-        board.remove_class("-visible")
-        flythrough.remove_class("-visible")
-        self._apply_thread_drawer_visibility()
+    def _apply_conversations_visibility(self) -> None:
+        pane = self.query_one("#conversations-pane", Vertical)
+        splitter = self.query_one("#splitter-left", PaneSplitter)
+        hide_button = self.query_one("#workspace-hide-conversations", Button)
+        pane.styles.display = "block" if self.conversations_visible else "none"
+        splitter.styles.display = "block" if self.conversations_visible else "none"
+        hide_button.styles.display = "block" if self.conversations_visible else "none"
 
-    def _setup_approval_options(self) -> None:
-        option_list = self.query_one("#approval-options", OptionList)
+    def _render_conversations(self) -> None:
+        app = self.app
+        assert isinstance(app, OpenHandsDemoApp)
+        option_list = self.query_one("#workspace-conversations", OptionList)
         option_list.clear_options()
         option_list.add_options(
             [
-                Option("Yes, allow once (Y)", id="allow_once"),
-                Option("No (N)", id="deny"),
-                Option("Always (A)", id="always"),
-            ]
-        )
-        option_list.highlighted = 0
-
-    def _render_approval_prompt(self) -> None:
-        title = self.query_one("#approval-title", Static)
-        options = self.query_one("#approval-options", OptionList)
-        if self.approval_visible:
-            title.add_class("-visible")
-            options.add_class("-visible")
-        else:
-            title.remove_class("-visible")
-            options.remove_class("-visible")
-
-    def _set_code_city_scene_enabled(self, enabled: bool) -> None:
-        self.code_city_visible = enabled
-        if enabled:
-            self.kanban_visible = False
-        self._apply_workspace_mode()
-        if enabled:
-            if self.code_city_timer is None:
-                self.code_city_timer = self.set_interval(
-                    1 / 12, self._advance_code_city_scene
+                Option(
+                    f"{conv.title}\n{conv.preview}\n{conv.updated_at}",
+                    id=conv.conversation_id,
                 )
-            self._render_code_city_scene()
-            return
-
-        if self.code_city_timer is not None:
-            self.code_city_timer.stop()
-            self.code_city_timer = None
-        self._render_code_city_scene()
-
-    def _set_kanban_board_enabled(self, enabled: bool) -> None:
-        self.kanban_visible = enabled
-        if enabled:
-            self.code_city_visible = False
-            if self.code_city_timer is not None:
-                self.code_city_timer.stop()
-                self.code_city_timer = None
-            self._render_kanban_board()
-        self._apply_workspace_mode()
-
-    def _build_kanban_cards(self) -> dict[str, list[dict[str, str]]]:
-        app = self.app
-        assert isinstance(app, OpenHandsCLIApp)
-        threads = app.ordered_threads
-        status_order = ["OPEN", "REVIEW", "MERGED"]
-        templates = [
-            ("PR #431", "Onboarding trust flow polish"),
-            ("PR #432", "Command submenu keyboard fixes"),
-            ("PR #433", "Monochrome theme token pass"),
-            ("PR #434", "Tips drawer interaction polish"),
-            ("PR #435", "Cost and todo thread components"),
-            ("PR #436", "Workspace fly mode renderer"),
-        ]
-        status_cards: dict[str, list[dict[str, str]]] = {key: [] for key in status_order}
-        if not threads:
-            return status_cards
-
-        for index, (pr_id, title) in enumerate(templates):
-            thread = threads[index % len(threads)]
-            status = status_order[index % len(status_order)]
-            status_cards[status].append(
-                {
-                    "task_id": f"board-{status.lower()}-{index}",
-                    "pr": pr_id,
-                    "title": title,
-                    "thread_id": thread.thread_id,
-                    "thread_title": thread.title,
-                    "repo": thread.repository,
-                }
-            )
-        return status_cards
-
-    def _render_kanban_board(self) -> None:
-        cards = self._build_kanban_cards()
-        self.board_task_to_thread = {}
-        column_map = [
-            ("OPEN", "#board-open-list"),
-            ("REVIEW", "#board-review-list"),
-            ("MERGED", "#board-merged-list"),
-        ]
-        for status, selector in column_map:
-            option_list = self.query_one(selector, OptionList)
-            option_list.clear_options()
-            options: list[Option] = []
-            for card in cards[status]:
-                self.board_task_to_thread[card["task_id"]] = card["thread_id"]
-                label = (
-                    f"┌ {card['pr']}\n"
-                    f"│ {card['title']}\n"
-                    f"│ conv: {card['thread_title']}\n"
-                    f"│ repo: {card['repo']}\n"
-                    "└"
-                )
-                options.append(Option(label, id=card["task_id"]))
-            if not options:
-                options.append(Option("┌ No PRs\n└", id=f"{status.lower()}-none"))
-            option_list.add_options(options)
-            option_list.highlighted = 0
-
-    def _advance_code_city_scene(self) -> None:
-        if not self.code_city_visible:
-            return
-        self.code_city_phase += 0.38
-        self._render_code_city_scene()
-
-    def _build_code_city_towers(self) -> list[dict[str, float]]:
-        rng = random.Random(2112)
-        towers: list[dict[str, float]] = []
-        for index in range(44):
-            side = -1.0 if index % 2 == 0 else 1.0
-            z = 10.0 + index * 7.2 + rng.uniform(-1.4, 1.8)
-            width = rng.uniform(2.2, 5.2)
-            depth = rng.uniform(2.6, 5.6)
-            height = rng.uniform(8.0, 36.0)
-            setback = rng.uniform(7.0, 15.0)
-            x_center = side * (setback + width * 0.5 + rng.uniform(-1.2, 1.2))
-            towers.append(
-                {
-                    "x0": x_center - width / 2,
-                    "x1": x_center + width / 2,
-                    "z": z,
-                    "depth": depth,
-                    "height": height,
-                }
-            )
-        return towers
-
-    def _render_code_city_scene(self) -> None:
-        scene = self.query_one("#fly-view", Static)
-        if not self.code_city_visible:
-            scene.update("")
-            scene.remove_class("-visible")
-            return
-        # Render as plain text because the frame intentionally contains [] and <> glyphs.
-        scene.update(Text(self._build_code_city_frame()))
-        scene.add_class("-visible")
-
-    def _build_code_city_frame(self) -> str:
-        scene = self.query_one("#fly-view", Static)
-        frame_width = scene.size.width if scene.size.width else 0
-        frame_height = scene.size.height if scene.size.height else 0
-        width = max(72, frame_width if frame_width > 0 else 108)
-        height = max(16, frame_height if frame_height > 0 else 20)
-        center = width // 2
-        travel = self.code_city_phase
-        grid = [[" "] * width for _ in range(height)]
-        horizon = max(2, int(height * 0.30))
-        near_plane = 1.1
-        far_plane = 120.0
-        focal = width * 0.95
-        camera_y = 2.0
-
-        def put(x: int, y: int, ch: str) -> None:
-            if 0 <= x < width and 0 <= y < height:
-                grid[y][x] = ch
-
-        def draw_line(x1: int, y1: int, x2: int, y2: int, ch: str) -> None:
-            steps = max(abs(x2 - x1), abs(y2 - y1), 1)
-            steps = min(steps, (width + height) * 2)
-            for step in range(steps + 1):
-                t = step / steps
-                x = int(round(x1 + (x2 - x1) * t))
-                y = int(round(y1 + (y2 - y1) * t))
-                put(x, y, ch)
-
-        def project(x: float, y_world: float, z: float) -> tuple[int, int] | None:
-            if z <= near_plane or z >= far_plane:
-                return None
-            y = y_world - camera_y
-            scale = focal / z
-            sx = int(round(center + x * scale))
-            sy = int(round(horizon - y * scale))
-            return sx, sy
-
-        def depth_char(z: float) -> str:
-            if z < 12:
-                return "#"
-            if z < 26:
-                return "|"
-            if z < 48:
-                return ":"
-            return "."
-
-        # Distant skyline stars.
-        for x in range(width):
-            if (x * 11 + int(travel * 19)) % 29 == 0:
-                put(x, max(0, horizon - 2), ".")
-
-        # Ground grid / lane traces with perspective projection.
-        road_half_world = 5.4
-        stride = 3.2
-        z_cursor = near_plane + 0.8
-        grid_phase = (travel * 2.7) % stride
-        while z_cursor < far_plane:
-            z = z_cursor + (stride - grid_phase)
-            left = project(-road_half_world, 0.0, z)
-            right = project(road_half_world, 0.0, z)
-            if left and right:
-                draw_line(left[0], left[1], right[0], right[1], ".")
-            z_cursor += stride
-
-        for x in (-3.6, -2.0, 0.0, 2.0, 3.6):
-            prev = None
-            z = near_plane + 0.9
-            while z < far_plane:
-                point = project(x, 0.0, z)
-                if prev and point:
-                    draw_line(prev[0], prev[1], point[0], point[1], "|")
-                prev = point
-                z += 2.6
-
-        # Draw tower cuboids far-to-near for stable layering.
-        wrapped_towers: list[dict[str, float]] = []
-        loop_length = max(self.code_city_loop_length, 120.0)
-        for tower in self.code_city_towers:
-            z_near = ((tower["z"] - travel) % loop_length) + near_plane + 1.8
-            z_far = z_near + tower["depth"]
-            if z_near >= far_plane:
-                continue
-            wrapped_towers.append(
-                {
-                    "x0": tower["x0"],
-                    "x1": tower["x1"],
-                    "height": tower["height"],
-                    "z_near": z_near,
-                    "z_far": z_far,
-                }
-            )
-
-        wrapped_towers.sort(key=lambda item: item["z_near"], reverse=True)
-
-        for index, tower in enumerate(wrapped_towers):
-            x0 = tower["x0"]
-            x1 = tower["x1"]
-            h = tower["height"]
-            z0 = tower["z_near"]
-            z1 = tower["z_far"]
-            edge = depth_char(z0)
-
-            # 8 cuboid corners: bottom ring then top ring.
-            corners_world = [
-                (x0, 0.0, z0),
-                (x1, 0.0, z0),
-                (x1, 0.0, z1),
-                (x0, 0.0, z1),
-                (x0, h, z0),
-                (x1, h, z0),
-                (x1, h, z1),
-                (x0, h, z1),
+                for conv in app.conversations
             ]
-            corners = [project(*corner) for corner in corners_world]
-            if any(corner is None for corner in corners):
-                continue
-
-            points = [corner for corner in corners if corner is not None]
-            if len(points) != 8:
-                continue
-
-            # Edges for a cuboid (wireframe).
-            edges = [
-                (0, 1),
-                (1, 2),
-                (2, 3),
-                (3, 0),
-                (4, 5),
-                (5, 6),
-                (6, 7),
-                (7, 4),
-                (0, 4),
-                (1, 5),
-                (2, 6),
-                (3, 7),
-            ]
-            for a, b in edges:
-                pa = points[a]
-                pb = points[b]
-                draw_line(pa[0], pa[1], pb[0], pb[1], edge)
-
-            # Window/facade glyphs on near face for depth cues.
-            window_cols = max(2, int((x1 - x0) * 2.0))
-            window_rows = max(3, int(h / 3.0))
-            for c in range(1, window_cols):
-                for r in range(1, window_rows):
-                    wx = x0 + (x1 - x0) * (c / window_cols)
-                    wy = h * (r / window_rows)
-                    wp = project(wx, wy, z0)
-                    if wp is None:
-                        continue
-                    marker_roll = (c * 7 + r * 11 + int(travel * 13) + index) % 6
-                    marker = "1" if marker_roll in {0, 1} else "0" if marker_roll == 2 else "."
-                    put(wp[0], wp[1], marker)
-
-        # Return a full-frame buffer (no header/footer) so the animation fills the container.
-        lines = ["".join(row) for row in grid]
-        return "\n".join(lines)
-
-    async def _render_active_thread(self) -> None:
-        app = self.app
-        assert isinstance(app, OpenHandsCLIApp)
-        chat_view = self.query_one("#chat-view", VerticalScroll)
-        await chat_view.remove_children()
-        for message in app.active_thread.messages:
-            await chat_view.mount(self._make_bubble(message))
-        chat_view.scroll_end(animate=False)
-
-    def _make_bubble(self, message: ChatMessage) -> Markdown:
-        return Markdown(
-            message.content,
-            classes=f"chat-line {message.role}",
-            parser_factory=markdown_parser_no_linkify,
         )
+        option_list.highlighted = app.active_conversation_index
 
-    @on(OptionList.OptionSelected, "#threads")
-    async def on_thread_selected(self, event: OptionList.OptionSelected) -> None:
-        if event.option_id is None:
-            return
+    def _render_chat(self) -> None:
         app = self.app
-        assert isinstance(app, OpenHandsCLIApp)
-        app.set_active_thread(event.option_id)
-        await self.sync_from_app_state()
+        assert isinstance(app, OpenHandsDemoApp)
+        chat_scroll = self.query_one("#chat-scroll", VerticalScroll)
+        chat_scroll.remove_children()
+        for role, content in app.active_conversation.messages:
+            bubble_class = "chat-bubble-user" if role == "user" else "chat-bubble-assistant"
+            chat_scroll.mount(Static(content, classes=f"chat-bubble {bubble_class}"))
+        chat_scroll.scroll_end(animate=False)
 
-    @on(OptionList.OptionSelected, "#board-open-list")
-    async def on_board_open_selected(self, event: OptionList.OptionSelected) -> None:
-        await self._open_kanban_card(event.option_id)
+    def _set_canvas_tab(self, tab_name: str) -> None:
+        self.active_canvas_tab = tab_name
+        self._render_canvas()
 
-    @on(OptionList.OptionSelected, "#board-review-list")
-    async def on_board_review_selected(self, event: OptionList.OptionSelected) -> None:
-        await self._open_kanban_card(event.option_id)
-
-    @on(OptionList.OptionSelected, "#board-merged-list")
-    async def on_board_merged_selected(self, event: OptionList.OptionSelected) -> None:
-        await self._open_kanban_card(event.option_id)
-
-    async def _open_kanban_card(self, option_id: str | None) -> None:
-        if option_id is None or option_id.endswith("-none"):
-            return
-        thread_id = self.board_task_to_thread.get(option_id)
-        if thread_id is None:
-            return
+    def _render_canvas(self) -> None:
         app = self.app
-        assert isinstance(app, OpenHandsCLIApp)
-        app.set_active_thread(thread_id)
-        self._set_kanban_board_enabled(False)
-        await self.sync_from_app_state()
-        self.query_one("#chat-input", Input).focus()
-        self.notify("Opened related conversation from Kanban task.")
-
-    @on(Input.Submitted, "#chat-input")
-    async def on_chat_submitted(self, event: Input.Submitted) -> None:
-        content = event.value.strip()
-        if not content:
-            return
-
-        app = self.app
-        assert isinstance(app, OpenHandsCLIApp)
-
-        if content.startswith("/"):
-            handled = await self._run_slash_command(content)
-            if handled:
-                event.input.clear()
-                self._hide_slash_menu()
-            return
-
-        event.input.clear()
-        self._hide_slash_menu()
-
-        user_message = ChatMessage("user", content)
-        app.active_thread.messages.append(user_message)
-
-        processing_message = ChatMessage("assistant", app.build_processing_preview(content))
-        app.active_thread.messages.append(processing_message)
-        await self.sync_from_app_state()
-        await asyncio.sleep(0.9)
-
-        self.task_output_expanded = True
-        self.last_task_prompt = content
-        self.last_task_message = processing_message
-        processing_message.content = app.build_completed_task_result(
-            prompt=content, expanded=self.task_output_expanded
-        )
-        app.increment_credit_cost(content)
-        app.active_thread.messages.append(
-            ChatMessage("assistant", app.build_cost_component())
-        )
-        app.advance_todo_progress()
-        await self.sync_from_app_state()
-
-    @on(Input.Changed, "#chat-input")
-    def on_chat_input_changed(self, event: Input.Changed) -> None:
-        value = event.value.strip()
-        if not value.startswith("/"):
-            self._hide_slash_menu()
-            self._hide_slash_submenu()
-            return
-
-        app = self.app
-        assert isinstance(app, OpenHandsCLIApp)
-        query = value[1:].strip().lower()
-        commands = app.slash_commands
-        matches = [
-            command
-            for command in commands
-            if not query
-            or command.name.startswith(query)
-            or query in command.description.lower()
-        ]
-
-        if not matches:
-            self._show_slash_menu_no_results()
-            self.slash_matches = []
-            self.slash_selected_index = 0
-            return
-
-        self.slash_matches = matches
-        self.slash_selected_index = 0
-        self._render_slash_menu()
-
-    async def action_new_thread(self) -> None:
-        app = self.app
-        assert isinstance(app, OpenHandsCLIApp)
-        app.create_thread()
-        await self.sync_from_app_state()
-        self.notify("Created a new mock conversation thread.")
-
-    async def action_cycle_repo_source(self) -> None:
-        app = self.app
-        assert isinstance(app, OpenHandsCLIApp)
-        app.cycle_repo_source()
-        await self.sync_from_app_state()
-        self.notify(f"Repository source set to {app.repo_source}.")
-
-    async def action_cycle_model(self) -> None:
-        app = self.app
-        assert isinstance(app, OpenHandsCLIApp)
-        app.cycle_model()
-        await self.sync_from_app_state()
-        self.notify(f"Model switched to {app.model_name}.")
-
-    async def action_toggle_tips_drawer(self) -> None:
-        self.tips_visible = not self.tips_visible
-        self._render_tips_drawer()
-
-    async def action_toggle_thread_drawer(self) -> None:
-        self.drawer_visible = not self.drawer_visible
-        self._apply_thread_drawer_visibility()
-        state = "shown" if self.drawer_visible else "hidden"
-        self.notify(f"Conversation drawer {state}.")
-
-    async def on_key(self, event: events.Key) -> None:
-        # Some terminals/input states can intercept Ctrl bindings; keep a direct fallback.
-        if event.key in {"ctrl+d", "ctrl+w"}:
-            event.stop()
-            await self.action_toggle_tips_drawer()
-            return
-
-        chat_input = self.query_one("#chat-input", Input)
-        input_value = chat_input.value.strip()
-        slash_visible = "-visible" in self.query_one("#slash-menu", OptionList).classes
-        if not (input_value.startswith("/") and slash_visible and self.slash_matches):
-            return
-
-        if event.key == "up":
-            event.stop()
-            self.slash_selected_index = max(0, self.slash_selected_index - 1)
-            self._render_slash_menu()
-        elif event.key == "down":
-            event.stop()
-            self.slash_selected_index = min(
-                len(self.slash_matches) - 1, self.slash_selected_index + 1
-            )
-            self._render_slash_menu()
-
-    async def action_toggle_task_output_details(self) -> None:
-        if self.last_task_message is None:
-            self.notify("No completed task output to toggle yet.")
-            return
-        app = self.app
-        assert isinstance(app, OpenHandsCLIApp)
-        self.task_output_expanded = not self.task_output_expanded
-        self.last_task_message.content = app.build_completed_task_result(
-            prompt=self.last_task_prompt, expanded=self.task_output_expanded
-        )
-        await self.sync_from_app_state()
-
-    @on(OptionList.OptionSelected, "#approval-options")
-    async def on_approval_selected(self, event: OptionList.OptionSelected) -> None:
-        if event.option_id is None:
-            return
-        app = self.app
-        assert isinstance(app, OpenHandsCLIApp)
-        decision_map = {
-            "allow_once": "Yes, allow once",
-            "deny": "No",
-            "always": "Always",
+        assert isinstance(app, OpenHandsDemoApp)
+        content_map = {
+            "changes": (
+                "Changes\n\n"
+                "[] Update monochrome shell spacing\n"
+                "[] Add draggable divider component\n"
+                "[] Refine login and dashboard transitions\n"
+            ),
+            "tasks": (
+                "Tasks\n\n"
+                "1. Analyze requested UX flow\n"
+                "2. Build static pane architecture\n"
+                "3. Present final visual polish pass\n"
+            ),
+            "plans": (
+                "Plans\n\n"
+                "Phase A: Login shell\n"
+                "Phase B: Dashboard + conversation picker\n"
+                "Phase C: Workspace tri-pane with canvas tabs\n"
+            ),
+            "files": (
+                "Files\n\n"
+                "examples/openhands_cli.py\n"
+                "examples/components/splitter.py\n"
+                "examples/openhands_cli.tcss\n"
+            ),
         }
-        app.active_thread.messages.append(
-            ChatMessage("assistant", f"Approval decision: **{decision_map[event.option_id]}**.")
+        tab_ids = {
+            "changes": "#tab-changes",
+            "tasks": "#tab-tasks",
+            "plans": "#tab-plans",
+            "files": "#tab-files",
+        }
+        for tab_name, selector in tab_ids.items():
+            button = self.query_one(selector, Button)
+            button.set_class(tab_name == self.active_canvas_tab, "-active")
+
+        header = f"Active Conversation: {app.active_conversation.title}\n\n"
+        self.query_one("#canvas-content", Static).update(
+            header + content_map.get(self.active_canvas_tab, "")
         )
-        self.approval_visible = False
-        await self.sync_from_app_state()
-        self.query_one("#chat-input", Input).focus()
-
-    async def _run_slash_command(self, raw_text: str) -> bool:
-        app = self.app
-        assert isinstance(app, OpenHandsCLIApp)
-
-        parts = raw_text[1:].strip().split()
-        command_name = parts[0].lower() if parts else ""
-        command_arg = parts[1].lower() if len(parts) > 1 else ""
-        selected_from_menu = False
-        if not command_name:
-            if self.slash_matches:
-                selected = self.slash_matches[
-                    max(0, min(self.slash_selected_index, len(self.slash_matches) - 1))
-                ]
-                command_name = selected.name
-                selected_from_menu = True
-            else:
-                self._render_slash_menu()
-                return True
-
-        if command_name in {"$", "credits", "cost"}:
-            cost_text = app.format_credit_cost()
-            self.notify(f"Current credit cost: {cost_text}")
-            app.active_thread.messages.append(
-                ChatMessage("assistant", app.build_cost_component())
-            )
-        elif command_name == "help":
-            command_help = "\n".join(
-                f"- `/{command.name}` - {command.description}"
-                for command in app.slash_commands
-            )
-            app.active_thread.messages.append(
-                ChatMessage("assistant", f"Available slash commands:\n{command_help}")
-            )
-        elif command_name == "init":
-            app.create_thread()
-            self.notify("Initialized a new repository context (mock).")
-        elif command_name == "status":
-            app.active_thread.messages.append(
-                ChatMessage(
-                    "assistant",
-                    "Session status:\n"
-                    f"- Repo source: `{app.repo_source}`\n"
-                    f"- Model: `{app.model_name}`\n"
-                    f"- Threads: `{len(app.threads)}`\n"
-                    f"- Todo: `{app.todo_summary()}`",
-                )
-            )
-        elif command_name == "todo":
-            app.active_thread.messages.append(
-                ChatMessage("assistant", app.build_todo_component())
-            )
-        elif command_name == "tips":
-            self.tips_visible = not self.tips_visible
-            state = "shown" if self.tips_visible else "hidden"
-            app.active_thread.messages.append(
-                ChatMessage("assistant", f"Tips drawer is now **{state}**.")
-            )
-        elif command_name in {"fly", "hackers", "city"}:
-            if command_arg in {"on", "show", "start"}:
-                self._set_code_city_scene_enabled(True)
-            elif command_arg in {"off", "hide", "stop"}:
-                self._set_code_city_scene_enabled(False)
-            else:
-                self._set_code_city_scene_enabled(not self.code_city_visible)
-            state = "running" if self.code_city_visible else "hidden"
-            app.active_thread.messages.append(
-                ChatMessage(
-                    "assistant",
-                    "Workspace simulation is now "
-                    f"**{state}**.\n\nUse `/fly on`, `/fly off`, or `/fly toggle`.",
-                )
-            )
-        elif command_name in {"board", "kanban", "prs"}:
-            if command_arg in {"on", "show", "start"}:
-                self._set_kanban_board_enabled(True)
-            elif command_arg in {"off", "hide", "stop"}:
-                self._set_kanban_board_enabled(False)
-            else:
-                self._set_kanban_board_enabled(not self.kanban_visible)
-            state = "visible" if self.kanban_visible else "hidden"
-            app.active_thread.messages.append(
-                ChatMessage(
-                    "assistant",
-                    "PR Kanban board is now "
-                    f"**{state}**.\n\nUse `/board on`, `/board off`, or `/board toggle`.",
-                )
-            )
-        elif command_name == "components":
-            app.active_thread.messages.append(
-                ChatMessage("assistant", app.build_components_gallery())
-            )
-        elif command_name in {"drawer", "threads"}:
-            if selected_from_menu and not command_arg:
-                self._show_slash_submenu(
-                    command_name="drawer",
-                    subtitle="Drawer options",
-                    options=[
-                        ("show", "Show left conversation drawer"),
-                        ("hide", "Hide left conversation drawer"),
-                        ("toggle", "Toggle drawer"),
-                    ],
-                )
-                return True
-            if command_arg in {"show", "open", "on"}:
-                self.drawer_visible = True
-            elif command_arg in {"hide", "close", "off"}:
-                self.drawer_visible = False
-            else:
-                self.drawer_visible = not self.drawer_visible
-            self._apply_thread_drawer_visibility()
-            state = "shown" if self.drawer_visible else "hidden"
-            app.active_thread.messages.append(
-                ChatMessage(
-                    "assistant",
-                    f"Conversation drawer is now **{state}**.\n\n"
-                    "Usage: `/drawer show`, `/drawer hide`, `/drawer toggle`.",
-                )
-            )
-        elif command_name == "sample":
-            app.active_thread.messages.append(
-                ChatMessage(
-                    "user",
-                    "> Enhance get_value in dict_helpers.py to support accessing nested dictionary values using a\n"
-                    "dot-separated string for the key (e.g., 'user.address.city'). If any part of the path\n"
-                    "doesn't exist, it should return the default value.",
-                )
-            )
-            app.active_thread.messages.append(
-                ChatMessage(
-                    "assistant",
-                    "Agent running...\n\n"
-                    "$ rg --files | rg dict_helpers.py\n\n"
-                    "I'll help you enhance `get_value` to support dot-separated nested paths.\n"
-                    "First, let's locate and inspect the implementation.",
-                )
-            )
-            self.approval_visible = True
-            self.query_one("#approval-options", OptionList).highlighted = 0
-        elif command_name == "repo":
-            if selected_from_menu and not command_arg:
-                self._show_slash_submenu(
-                    command_name="repo",
-                    subtitle="Repository source",
-                    options=[
-                        ("local", "Set repository source to local"),
-                        ("cloud", "Set repository source to cloud"),
-                        ("toggle", "Toggle repository source"),
-                    ],
-                )
-                return True
-            if command_arg in {"local", "cloud"}:
-                app.repo_source_index = 0 if command_arg == "local" else 1
-            else:
-                app.cycle_repo_source()
-            self.notify(f"Repository source set to {app.repo_source}.")
-        elif command_name == "model":
-            if selected_from_menu and not command_arg:
-                self._show_slash_submenu(
-                    command_name="model",
-                    subtitle="Model options",
-                    options=[
-                        ("gpt", "Use GPT model"),
-                        ("claude", "Use Claude model"),
-                        ("gemini", "Use Gemini model"),
-                        ("toggle", "Cycle to next model"),
-                    ],
-                )
-                return True
-            if command_arg in {"gpt", "claude", "gemini"}:
-                app.model_index = {"gpt": 0, "claude": 1, "gemini": 2}[command_arg]
-            else:
-                app.cycle_model()
-            self.notify(f"Model switched to {app.model_name}.")
-        elif command_name == "new":
-            app.create_thread()
-            self.notify("Created a new conversation thread.")
-        elif command_name == "exit":
-            app.exit()
-            return True
-        else:
-            self.notify(f"Unknown command: /{command_name}")
-            return True
-
-        await self.sync_from_app_state()
-        if self.approval_visible:
-            self.query_one("#approval-options", OptionList).focus()
-        return True
-
-    def _render_slash_menu(self) -> None:
-        option_list = self.query_one("#slash-menu", OptionList)
-        option_list.clear_options()
-
-        if not self.slash_matches:
-            self._hide_slash_menu()
-            return
-
-        for command in self.slash_matches:
-            option_list.add_option(
-                Option(f"/{command.name} - {command.description}", id=command.name)
-            )
-        option_list.highlighted = self.slash_selected_index
-        option_list.add_class("-visible")
-
-    def _show_slash_menu_no_results(self) -> None:
-        option_list = self.query_one("#slash-menu", OptionList)
-        option_list.clear_options()
-        option_list.add_option(Option("No commands found", id="none"))
-        option_list.highlighted = 0
-        option_list.add_class("-visible")
-
-    def _hide_slash_menu(self) -> None:
-        menu = self.query_one("#slash-menu", OptionList)
-        menu.clear_options()
-        menu.remove_class("-visible")
-
-    def _show_slash_submenu(
-        self, command_name: str, subtitle: str, options: list[tuple[str, str]]
-    ) -> None:
-        self.slash_submenu_command = command_name
-        title = self.query_one("#slash-submenu-title", Static)
-        title.update(subtitle)
-        title.add_class("-visible")
-
-        option_list = self.query_one("#slash-submenu", OptionList)
-        option_list.clear_options()
-        for option_id, text in options:
-            option_list.add_option(Option(text, id=option_id))
-        option_list.highlighted = 0
-        option_list.add_class("-visible")
-
-    def _hide_slash_submenu(self) -> None:
-        self.slash_submenu_command = None
-        title = self.query_one("#slash-submenu-title", Static)
-        title.update("")
-        title.remove_class("-visible")
-        option_list = self.query_one("#slash-submenu", OptionList)
-        option_list.clear_options()
-        option_list.remove_class("-visible")
-
-    @on(OptionList.OptionSelected, "#slash-menu")
-    async def on_slash_menu_selected(self, event: OptionList.OptionSelected) -> None:
-        command_name = event.option_id
-        if command_name in {None, "none"}:
-            return
-
-        if command_name in {"drawer", "threads"}:
-            self._show_slash_submenu(
-                command_name="drawer",
-                subtitle="Drawer options",
-                options=[
-                    ("show", "Show left conversation drawer"),
-                    ("hide", "Hide left conversation drawer"),
-                    ("toggle", "Toggle drawer"),
-                ],
-            )
-            return
-
-        if command_name == "repo":
-            self._show_slash_submenu(
-                command_name="repo",
-                subtitle="Repository source",
-                options=[
-                    ("local", "Set repository source to local"),
-                    ("cloud", "Set repository source to cloud"),
-                    ("toggle", "Toggle repository source"),
-                ],
-            )
-            return
-
-        if command_name == "model":
-            self._show_slash_submenu(
-                command_name="model",
-                subtitle="Model options",
-                options=[
-                    ("gpt", "Use GPT model"),
-                    ("claude", "Use Claude model"),
-                    ("gemini", "Use Gemini model"),
-                    ("toggle", "Cycle to next model"),
-                ],
-            )
-            return
-
-        await self._run_slash_command(f"/{command_name}")
-        self._hide_slash_menu()
-        self.query_one("#chat-input", Input).focus()
-
-    @on(OptionList.OptionSelected, "#slash-submenu")
-    async def on_slash_submenu_selected(self, event: OptionList.OptionSelected) -> None:
-        if event.option_id is None or self.slash_submenu_command is None:
-            return
-        option_arg = event.option_id
-        command_name = self.slash_submenu_command
-        if option_arg == "toggle":
-            await self._run_slash_command(f"/{command_name}")
-        else:
-            await self._run_slash_command(f"/{command_name} {option_arg}")
-        self._hide_slash_submenu()
-        self._hide_slash_menu()
-        self.query_one("#chat-input", Input).focus()
 
 
-class OpenHandsCLIApp(App):
-    """Interactive OpenHands CLI prototype with no external dependencies."""
-
+class OpenHandsDemoApp(App):
     CSS_PATH = "openhands_cli.tcss"
-    TITLE = "OpenHands CLI"
-    SUB_TITLE = "Clickable design prototype"
+    TITLE = "OpenHands Monochrome IDE Demo"
+    SUB_TITLE = "Login -> dashboard -> tri-pane workspace"
 
-    COMMANDS = App.COMMANDS | {OpenHandsCommandProvider}
-    SCREENS = {"startup": OnboardingScreen, "main": MainShellScreen}
+    SCREENS = {
+        "login": LoginScreen,
+        "dashboard": DashboardScreen,
+        "workspace": WorkspaceScreen,
+    }
 
     def __init__(self) -> None:
         super().__init__()
-        self.repo_sources = ["local", "cloud"]
-        self.repo_source_index = 0
-        self.branch_name = "feature/kanban-interactive-board"
-        self.models = ["gpt-4.1", "claude-sonnet", "gemini-2.5-pro"]
-        self.model_index = 0
-        self.thread_count = 0
-        self.threads = self._build_seed_threads()
-        self.active_thread_id = next(iter(self.threads))
-        self.onboarding_complete = False
-        self.provider_choice: str | None = None
-        self.conversation_id: str | None = None
-        self.todo_items = self._build_seed_todos()
-        self.credit_cost = 0.065
+        self.conversation_counter = 0
+        self.conversations = self._seed_conversations()
+        self.active_conversation_id = self.conversations[0].conversation_id
 
     @property
-    def repo_source(self) -> str:
-        return self.repo_sources[self.repo_source_index]
+    def active_conversation(self) -> Conversation:
+        for conversation in self.conversations:
+            if conversation.conversation_id == self.active_conversation_id:
+                return conversation
+        return self.conversations[0]
 
     @property
-    def model_name(self) -> str:
-        return self.models[self.model_index]
+    def active_conversation_index(self) -> int:
+        for index, conversation in enumerate(self.conversations):
+            if conversation.conversation_id == self.active_conversation_id:
+                return index
+        return 0
 
-    @property
-    def ordered_threads(self) -> list[ConversationThread]:
-        return list(self.threads.values())
-
-    @property
-    def active_thread_index(self) -> int:
-        ids = list(self.threads.keys())
-        return ids.index(self.active_thread_id)
-
-    @property
-    def active_thread(self) -> ConversationThread:
-        return self.threads[self.active_thread_id]
-
-    @property
-    def command_entries(self) -> list[tuple[str, str, str]]:
+    def _seed_conversations(self) -> list[Conversation]:
+        now = datetime.now().strftime("%b %d")
         return [
-            ("connect_local", "Connect local repository", "Switch repo source to local"),
-            ("connect_cloud", "Connect cloud repository", "Switch repo source to cloud"),
-            ("new_thread", "Create new conversation thread", "Start a fresh planning thread"),
-            ("switch_model", "Switch active model", "Rotate to next mocked LLM"),
-            ("show_examples", "Load conversation examples", "Focus on pre-seeded examples"),
-            ("go_startup", "Return to startup screen", "Navigate back to splash/start page"),
-        ]
-
-    @property
-    def slash_commands(self) -> list[SlashCommand]:
-        return [
-            SlashCommand("$", "Show current credit use"),
-            SlashCommand("cost", "Display current credit cost"),
-            SlashCommand("exit", "Exit the application"),
-            SlashCommand("help", "Display available commands"),
-            SlashCommand("init", "Initialize a new repository"),
-            SlashCommand("status", "Display conversation details and usage metrics"),
-            SlashCommand("todo", "Show task list summary"),
-            SlashCommand("tips", "Show or hide the tips drawer"),
-            SlashCommand("fly", "Toggle 3D code-city fly-through workspace simulation"),
-            SlashCommand("board", "Show/hide PR Kanban board linked to conversations"),
-            SlashCommand("components", "Show sample conversation components gallery"),
-            SlashCommand("drawer", "Show, hide, or toggle the left conversation drawer"),
-            SlashCommand("sample", "Show multiline prompt + approval selection sample"),
-            SlashCommand("repo", "Switch repository source local/cloud"),
-            SlashCommand("model", "Switch active model"),
-            SlashCommand("new", "Create a new conversation thread"),
-        ]
-
-    def on_mount(self) -> None:
-        self.push_screen("startup")
-
-    def show_main_screen(self) -> None:
-        if isinstance(self.screen, OnboardingScreen):
-            self.pop_screen()
-        if not isinstance(self.screen, MainShellScreen):
-            self.push_screen("main")
-
-    def complete_onboarding(self) -> None:
-        self.onboarding_complete = True
-        self.conversation_id = str(uuid4())
-        self.active_thread.messages.insert(
-            0,
-            ChatMessage(
-                "assistant",
-                f"Initialized conversation `{self.conversation_id}`.\n"
-                f"Provider: **{self.provider_choice or 'OpenHands'}**.",
+            Conversation(
+                conversation_id=str(uuid4()),
+                title="Onboarding Polish",
+                preview="Build a cleaner first-run experience.",
+                updated_at=f"Updated {now}",
+                messages=[
+                    ("assistant", "Welcome. This is a monochrome full-UI prototype."),
+                    ("user", "Show me login, dashboard, and workspace panes."),
+                    ("assistant", "Done. Layout is visual and interaction-light by design."),
+                ],
             ),
-        )
-
-    def build_todo_render(self) -> str:
-        lines = [
-            "Agent Updated Plan",
-            f"Task List ({len(self.todo_items)} items)",
-            "",
+            Conversation(
+                conversation_id=str(uuid4()),
+                title="UI System Tokens",
+                preview="Switch to white lines on black only.",
+                updated_at=f"Updated {now}",
+                messages=[
+                    ("assistant", "Tokens set: background black, text white, muted gray."),
+                    ("user", "Keep all buttons outlined and rounded."),
+                ],
+            ),
+            Conversation(
+                conversation_id=str(uuid4()),
+                title="Canvas Behavior",
+                preview="Add Changes / Tasks / Plans / Files tabs.",
+                updated_at=f"Updated {now}",
+                messages=[
+                    ("assistant", "Canvas tabs are now available in the right pane."),
+                ],
+            ),
         ]
-        for index, item in enumerate(self.todo_items, start=1):
-            icon = {
-                "done": "✓",
-                "in_progress": "⋯",
-                "blocked": "x",
-                "todo": "□",
-            }.get(item.status, "□")
-            status_text = item.status.replace("_", " ").upper()
-            lines.append(f"{icon} {index}. {status_text}")
-            lines.append(item.title)
-            if item.reason:
-                lines.append(f"Reason: {item.reason}")
-            lines.append(f"ID: {item.todo_id}")
-            if index < len(self.todo_items):
-                lines.append("")
-        return "\n".join(lines)
 
-    def build_todo_component(self) -> str:
-        return f"```text\n{self.build_todo_render()}\n```"
+    def set_active_conversation(self, conversation_id: str) -> None:
+        self.active_conversation_id = conversation_id
 
-    def todo_summary(self) -> str:
-        totals = {"done": 0, "in_progress": 0, "blocked": 0, "todo": 0}
-        for item in self.todo_items:
-            totals[item.status] = totals.get(item.status, 0) + 1
-        return (
-            f"{totals['done']} done, "
-            f"{totals['in_progress']} in progress, "
-            f"{totals['blocked']} blocked, "
-            f"{totals['todo']} todo"
-        )
-
-    def advance_todo_progress(self) -> None:
-        for item in self.todo_items:
-            if item.status == "in_progress":
-                item.status = "done"
-                break
-        for item in self.todo_items:
-            if item.status == "todo":
-                item.status = "in_progress"
-                break
-
-    def increment_credit_cost(self, prompt: str) -> None:
-        # Lightweight mock cost model to make the UI feel alive.
-        self.credit_cost += 0.006 + min(len(prompt), 180) * 0.00003
-
-    def format_credit_cost(self) -> str:
-        return f"${self.credit_cost:.3f}"
-
-    def build_cost_component(self) -> str:
-        return f"```text\nCurrent Credit Cost: {self.format_credit_cost()}\n```"
-
-    def build_components_gallery(self) -> str:
-        return (
-            "### Conversation Components Gallery\n\n"
-            "**Task (collapsed)**\n"
-            "```text\n"
-            "Read author-sidebar.module.css\n"
-            "(Ctrl-S to show details)\n"
-            "```\n\n"
-            "**Task (expanded output)**\n"
-            "```text\n"
-            "$ cat -n src/components/author-sidebar/author-sidebar.module.css\n"
-            "1 .sidebar { width: 300px; }\n"
-            "2 .avatar { width: 70px; }\n"
-            "...\n"
-            "(esc to cancel • 32s, Ctrl-S to hide details)\n"
-            "```\n\n"
-            "**Approval Prompt**\n"
-            "```text\n"
-            "Proceed with action?\n"
-            "1. Yes, allow once\n"
-            "2. No\n"
-            "3. Always\n"
-            "```\n\n"
-            "**Plan / Todo Object**\n"
-            f"{self.build_todo_component()}\n\n"
-            "**Cost Object**\n"
-            f"{self.build_cost_component()}\n\n"
-            "**Process Object**\n"
-            "```text\n"
-            "Agent running...\n"
-            "Step 1/3 scan files → Step 2/3 refactor → Step 3/3 verify tests\n"
-            "Status: in progress\n"
-            "```"
-        )
-
-    def set_active_thread(self, thread_id: str) -> None:
-        if thread_id in self.threads:
-            self.active_thread_id = thread_id
-
-    def cycle_repo_source(self) -> None:
-        self.repo_source_index = (self.repo_source_index + 1) % len(self.repo_sources)
-
-    def cycle_model(self) -> None:
-        self.model_index = (self.model_index + 1) % len(self.models)
-
-    def create_thread(self) -> None:
-        self.thread_count += 1
-        thread_id = f"thread-{self.thread_count + len(self.threads)}"
-        title = f"Prototype Flow {self.thread_count}"
-        repository = (
-            "./workspace/new-product"
-            if self.repo_source == "local"
-            else "github.com/acme/new-product"
-        )
-        self.threads[thread_id] = ConversationThread(
-            thread_id=thread_id,
-            title=title,
-            repository=repository,
+    def create_conversation(self) -> None:
+        self.conversation_counter += 1
+        conversation = Conversation(
+            conversation_id=str(uuid4()),
+            title=f"New Conversation {self.conversation_counter}",
+            preview="Fresh workspace context.",
+            updated_at="Updated just now",
             messages=[
-                ChatMessage(
+                (
                     "assistant",
-                    "New thread ready. Describe the feature and I'll draft an implementation plan.",
+                    "New conversation created. Ask for changes, tasks, plans, or files.",
                 )
             ],
         )
-        self.active_thread_id = thread_id
+        self.conversations.insert(0, conversation)
+        self.active_conversation_id = conversation.conversation_id
 
-    def build_mock_response(self, prompt: str) -> str:
-        if "repo" in prompt.lower():
-            return (
-                f"Connected context: **{self.repo_source}** repository.\n\n"
-                "I can now inspect files, propose architecture, and scaffold feature work."
-            )
-        if "test" in prompt.lower():
-            return (
-                "Suggested test plan:\n"
-                "1. Add unit tests for command parsing.\n"
-                "2. Add integration test for thread switching.\n"
-                "3. Verify browser serve interaction flow."
-            )
-        if "design" in prompt.lower() or "ui" in prompt.lower():
-            return (
-                "UI pattern proposal:\n"
-                "- Startup hero with clear CTA.\n"
-                "- Persistent bottom input.\n"
-                "- Command lookup via Ctrl+P.\n"
-                "- Multi-thread conversation context."
-            )
-        return (
-            "Mock assistant response:\n"
-            "I can break this request into tasks, generate scaffold code, and propose tests.\n"
-            f"Current model: `{self.model_name}`."
-        )
+    def on_mount(self) -> None:
+        self.push_screen("login")
 
-    def build_processing_preview(self, prompt: str) -> str:
-        target = self._get_lookup_target(prompt)
-        return (
-            f"Now let me look at the **{target}** component:\n\n"
-            f"┌ Read `{target}` ⋮\n\n"
-            "(esc to cancel • 3s, Ctrl-S to show details)"
-        )
+    def show_dashboard(self) -> None:
+        self.switch_screen("dashboard")
 
-    def build_completed_task_result(self, prompt: str, expanded: bool) -> str:
-        target = self._get_lookup_target(prompt)
-        path = self._get_lookup_path(target)
-        header = (
-            f"Now let me look at the **{target}** component:\n\n"
-            f"┌ Read `{target}` ⋮\n\n"
-            f"Here's the result of running `cat -n` on\n`{path}`:"
-        )
-
-        if not expanded:
-            return f"{header}\n\n(Ctrl-S to show details)"
-
-        output = (
-            "```text\n"
-            "1  .sidebar {\n"
-            "2      float: right;\n"
-            "3      width: 300px;\n"
-            "4      position: relative;\n"
-            "5      z-index: 5;\n"
-            "6      background-color: var(--background);\n"
-            "7      padding-left: 5px;\n"
-            "8      padding-bottom: 5px;\n"
-            "9  }\n"
-            "10\n"
-            "11 .avatar {\n"
-            "12     width: 70px;\n"
-            "13     height: 70px;\n"
-            "14     margin-bottom: 5px;\n"
-            "15     border: 1px solid var(--border-text);\n"
-            "16 }\n"
-            "```"
-        )
-        return f"{header}\n\n{output}\n\n(esc to cancel • 32s, Ctrl-S to hide details)"
-
-    def _get_lookup_target(self, prompt: str) -> str:
-        at_path = re.search(r"@([\w./-]+)", prompt)
-        if at_path:
-            return at_path.group(1)
-
-        file_like = re.search(r"([\w./-]+\.(?:py|ts|tsx|js|jsx|css|tcss|md))", prompt)
-        if file_like:
-            return file_like.group(1)
-
-        component = re.search(r"([a-zA-Z0-9_-]+(?:\\s+[a-zA-Z0-9_-]+){0,2})", prompt.strip())
-        if component:
-            return component.group(1).replace(" ", "-")
-
-        return "project-files"
-
-    def _get_lookup_path(self, target: str) -> str:
-        if "/" in target:
-            return f"/workspace/project/{target}"
-        return f"/workspace/project/seedit/src/components/{target.replace('.module.css', '')}/{target}"
-
-    def execute_mock_command(self, command_id: str) -> None:
-        if command_id == "connect_local":
-            self.repo_source_index = 0
-            self.notify("Connected to local repositories (mock).")
-        elif command_id == "connect_cloud":
-            self.repo_source_index = 1
-            self.notify("Connected to cloud repositories (mock).")
-        elif command_id == "new_thread":
-            self.create_thread()
-            self.notify("Created new conversation thread.")
-        elif command_id == "switch_model":
-            self.cycle_model()
-            self.notify(f"Model switched to {self.model_name}.")
-        elif command_id == "show_examples":
-            self.active_thread_id = "thread-onboarding"
-            self.notify("Loaded example conversation thread.")
-        elif command_id == "go_startup":
-            if not isinstance(self.screen, OnboardingScreen):
-                self.push_screen("startup")
-            return
-
-        if isinstance(self.screen, MainShellScreen):
-            self.run_worker(self.screen.sync_from_app_state(), exclusive=True, group="ui-sync")
-        else:
-            self.show_main_screen()
-
-    def _build_seed_threads(self) -> dict[str, ConversationThread]:
-        return {
-            "thread-onboarding": ConversationThread(
-                thread_id="thread-onboarding",
-                title="Onboarding Flow",
-                repository="./repos/openhands-cli",
-                messages=[
-                    ChatMessage(
-                        "assistant",
-                        "Welcome. I can help you scaffold a CLI architecture for OpenHands.",
-                    ),
-                    ChatMessage(
-                        "user",
-                        "Start with startup screen, command lookup, and a bottom input pattern.",
-                    ),
-                    ChatMessage(
-                        "assistant",
-                        "Plan ready. I will build reusable screens and mock thread data first.",
-                    ),
-                ],
-            ),
-            "thread-local-repo": ConversationThread(
-                thread_id="thread-local-repo",
-                title="Local Repository Setup",
-                repository="./repos/agent-workbench",
-                messages=[
-                    ChatMessage("user", "Connect to my local repository and scan structure."),
-                    ChatMessage(
-                        "assistant",
-                        "Connected to local path and indexed key modules (mock preview).",
-                    ),
-                ],
-            ),
-            "thread-cloud-repo": ConversationThread(
-                thread_id="thread-cloud-repo",
-                title="Cloud Repository Session",
-                repository="github.com/team/agent-console",
-                messages=[
-                    ChatMessage("user", "Open cloud repo and prepare task breakdown."),
-                    ChatMessage(
-                        "assistant",
-                        "Cloud workspace linked. I can now draft milestones and PR slices.",
-                    ),
-                ],
-            ),
-        }
-
-    def _build_seed_todos(self) -> list[TodoItem]:
-        return [
-            TodoItem(
-                title="Convert search bar form, dropdown, infobar with animations and responsive behavior",
-                todo_id="convert_search_bar",
-                status="done",
-            ),
-            TodoItem(
-                title="Convert small components (tooltip, feed-toggle, error-display, sticky-header, flair, label)",
-                todo_id="convert_small_components",
-                status="in_progress",
-            ),
-            TodoItem(
-                title="Convert reply form with textarea, buttons, markdown help table, options",
-                todo_id="convert_reply_form",
-                status="blocked",
-                reason="dependency on markdown lib upgrade",
-            ),
-            TodoItem(
-                title="Convert complex markdown rendering with nested selectors using Tailwind classes",
-                todo_id="convert_markdown_rendering",
-                status="todo",
-            ),
-        ]
+    def show_workspace(self) -> None:
+        self.switch_screen("workspace")
 
 
 if __name__ == "__main__":
-    app = OpenHandsCLIApp()
+    app = OpenHandsDemoApp()
     app.run()

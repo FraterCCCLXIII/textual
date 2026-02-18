@@ -162,22 +162,45 @@ OptionList > .option-list--option-hover {
 }
 
 #workspace-header {
-    border: round #ffffff;
-    padding: 0 1;
+    border: none;
+    border-bottom: solid #ffffff;
+    padding: 0;
     height: auto;
     margin-bottom: 1;
 }
 
 #workspace-title {
-    width: auto;
+    width: 1fr;
     text-style: bold;
     color: #ffffff;
 }
 
-#workspace-crumbs {
-    width: 1fr;
-    content-align: center middle;
-    color: #d0d0d0;
+#workspace-top-tabs {
+    width: auto;
+    height: auto;
+    align: right middle;
+}
+
+.top-nav-tab {
+    border: none;
+    background: #000000;
+    color: #9a9a9a;
+    text-style: none;
+    padding: 0 1;
+    margin-right: 1;
+}
+
+.top-nav-tab:hover {
+    background: #000000;
+    color: #ffffff;
+}
+
+.top-nav-tab.-active {
+    border: none;
+    border-bottom: solid #32d74b;
+    background: #000000;
+    color: #ffffff;
+    text-style: bold;
 }
 
 #workspace-columns {
@@ -194,6 +217,7 @@ OptionList > .option-list--option-hover {
 #conversations-pane {
     width: 32;
     min-width: 24;
+    padding: 0 0 0 1;
 }
 
 #chat-pane {
@@ -209,6 +233,7 @@ OptionList > .option-list--option-hover {
 .panel-head {
     height: auto;
     align: left middle;
+    width: 1fr;
 }
 
 #conversations-head-title {
@@ -219,8 +244,9 @@ OptionList > .option-list--option-hover {
     border: none;
     background: #000000;
     padding: 0;
-    margin-left: 1;
+    margin-left: 0;
     margin-right: 0;
+    width: auto;
 }
 
 #workspace-hide-conversations:hover {
@@ -236,15 +262,17 @@ OptionList > .option-list--option-hover {
 
 #workspace-conversations > .option-list--option {
     border-bottom: solid #5a5a5a;
+    padding-top: 1;
     padding-bottom: 1;
-    margin-bottom: 1;
+    margin-bottom: 2;
 }
 
 #workspace-conversations > .option-list--option-highlighted,
 #workspace-conversations > .option-list--option-hover {
     border-bottom: solid #5a5a5a;
+    padding-top: 1;
     padding-bottom: 1;
-    margin-bottom: 1;
+    margin-bottom: 2;
 }
 
 #chat-scroll {
@@ -279,7 +307,7 @@ OptionList > .option-list--option-hover {
 }
 
 .chat-bubble-user {
-    background: #0d0d0d;
+    background: #2a2a2a;
     color: #ffffff;
 }
 
@@ -306,8 +334,9 @@ OptionList > .option-list--option-hover {
 #splitter-right {
     width: 1;
     min-width: 1;
+    height: 1fr;
     background: #000000;
-    color: #ffffff;
+    color: #6a6a6a;
     margin: 0;
 }
 
@@ -315,5 +344,77 @@ OptionList > .option-list--option-hover {
 #splitter-right:hover,
 #splitter-left.-dragging,
 #splitter-right.-dragging {
-    color: #cfcfcf;
+    color: #ffffff;
+}
+
+/* CLI2 provider login */
+#cli2-login-shell {
+    width: 1fr;
+    height: 1fr;
+    align: center middle;
+}
+
+#cli2-login-card {
+    width: 56;
+    max-width: 90%;
+    height: auto;
+    align: center middle;
+    layout: vertical;
+}
+
+#cli2-login-mark {
+    width: 1fr;
+    content-align: center middle;
+    margin-bottom: 1;
+    color: #e5e5e5;
+}
+
+#cli2-login-title {
+    width: 1fr;
+    content-align: center middle;
+    text-style: bold;
+    color: #f2f2f2;
+    margin-bottom: 1;
+}
+
+.oauth-btn {
+    width: 1fr;
+    margin-right: 0;
+    margin-bottom: 1;
+    background: #000000;
+    text-style: bold;
+}
+
+#cli2-login-github {
+    border: round #b045d6;
+    color: #dca8ef;
+}
+
+#cli2-login-gitlab {
+    border: round #ff6b1a;
+    color: #ffb58f;
+}
+
+#cli2-login-bitbucket {
+    border: round #3b82f6;
+    color: #a7c8ff;
+}
+
+#cli2-login-github:hover {
+    background: #170a1d;
+}
+
+#cli2-login-gitlab:hover {
+    background: #201006;
+}
+
+#cli2-login-bitbucket:hover {
+    background: #091223;
+}
+
+#cli2-login-legal {
+    width: 1fr;
+    content-align: center middle;
+    color: #9a9a9a;
+    margin-top: 2;
 }
