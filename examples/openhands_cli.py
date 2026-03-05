@@ -12,9 +12,9 @@ from uuid import uuid4
 from textual import events, on
 from textual.app import App, ComposeResult
 from textual.command import Hit, Hits, Provider
-from textual.containers import Container, Horizontal, Vertical, VerticalScroll
-from textual.screen import Screen
-from textual.widgets import Footer, Input, Markdown, OptionList, Static
+from textual.containers import Container, Grid, Horizontal, Vertical, VerticalScroll
+from textual.screen import ModalScreen, Screen
+from textual.widgets import Button, Footer, Input, Label, Markdown, OptionList, Static
 from textual.widgets.option_list import Option
 from markdown_it import MarkdownIt
 from rich.text import Text
@@ -71,6 +71,21 @@ class TodoItem:
     todo_id: str
     status: str
     reason: str = ""
+
+
+class ModalDialogScreen(ModalScreen[None]):
+    """Modal dialog with buttons, shown via /modal command."""
+
+    def compose(self) -> ComposeResult:
+        yield Grid(
+            Label("Modal Dialog", id="modal-title"),
+            Button("OK", id="modal-ok"),
+            Button("Cancel", id="modal-cancel"),
+            id="modal-dialog",
+        )
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        self.dismiss()
 
 
 class OpenHandsCommandProvider(Provider):
@@ -1142,6 +1157,8 @@ class MainShellScreen(Screen):
         elif command_name == "new":
             app.create_thread()
             self.notify("Created a new conversation thread.")
+        elif command_name == "modal":
+            self.app.push_screen(ModalDialogScreen())
         elif command_name == "exit":
             app.exit()
             return True
@@ -1343,6 +1360,7 @@ class OpenHandsCLIApp(App):
             SlashCommand("sample", "Show multiline prompt + approval selection sample"),
             SlashCommand("repo", "Switch repository source local/cloud"),
             SlashCommand("model", "Switch active model"),
+            SlashCommand("modal", "Show a modal dialog with buttons"),
             SlashCommand("new", "Create a new conversation thread"),
         ]
 
