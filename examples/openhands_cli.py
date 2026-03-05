@@ -11,11 +11,16 @@ from uuid import uuid4
 
 from textual import events, on
 from textual.app import App, ComposeResult
+from textual.binding import Binding
 from textual.command import Hit, Hits, Provider
 from textual.containers import Container, Grid, Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen, Screen
-from textual.widgets import Button, Footer, Input, Label, Markdown, OptionList, Static
+from textual.widgets import Button, Footer, Input, Label, Markdown, OptionList, Static, Tab, Tabs
 from textual.widgets.option_list import Option
+
+
+class ConversationTabs(Tabs, can_focus=False):
+    """Tabs for conversations - not focusable so chat input keeps focus."""
 from markdown_it import MarkdownIt
 from rich.text import Text
 
@@ -309,6 +314,7 @@ class MainShellScreen(Screen):
     """Main shell with thread list, conversation view, and bottom input."""
 
     BINDINGS = [
+        Binding("ctrl+c,super+c", "screen.copy_text", "Copy", show=False),
         ("ctrl+p", "app.command_palette", "Commands"),
         ("ctrl+l", "toggle_thread_drawer", "Drawer"),
         ("ctrl+n", "new_thread", "New Thread"),
@@ -321,6 +327,7 @@ class MainShellScreen(Screen):
 
     def compose(self) -> ComposeResult:
         with Container(id="main-shell"):
+            yield ConversationTabs(id="conversation-tabs")
             with Horizontal(id="workspace"):
                 with Horizontal(id="workspace-columns"):
                     with Vertical(id="thread-panel"):
@@ -329,6 +336,12 @@ class MainShellScreen(Screen):
                     with Vertical(id="chat-panel"):
                         with VerticalScroll(id="chat-view"):
                             pass
+                        yield Input(
+                            placeholder="Type a request (or @path/to/file), then press Enter",
+                            id="chat-input",
+                        )
+                        yield Static(id="status-footer")
+                        yield Footer()
                 with Container(id="board-view"):
                     with Horizontal(id="board-columns"):
                         with Vertical(classes="board-column"):
@@ -348,22 +361,16 @@ class MainShellScreen(Screen):
             yield Static(id="tips-drawer")
             yield Static("Proceed with action?", id="approval-title")
             yield OptionList(id="approval-options", compact=True)
-            yield Input(
-                placeholder="Type a request (or @path/to/file), then press Enter",
-                id="chat-input",
-            )
             yield OptionList(id="slash-menu", compact=True)
             yield Static(id="slash-submenu-title")
             yield OptionList(id="slash-submenu", compact=True)
-            yield Static(id="status-footer")
-            yield Footer()
 
     async def on_mount(self) -> None:
         self.query_one("#chat-view", VerticalScroll).anchor()
         self.slash_matches: list[SlashCommand] = []
         self.slash_selected_index = 0
         self.slash_submenu_command: str | None = None
-        self.drawer_visible = True
+        self.drawer_visible = False
         self.tips_visible = False
         self.approval_visible = False
         self.task_output_expanded = True
@@ -371,6 +378,7 @@ class MainShellScreen(Screen):
         self.last_task_message: ChatMessage | None = None
         self.code_city_visible = False
         self.kanban_visible = False
+        self._is_rendering_tabs = False
         self.code_city_phase = 0.0
         self.code_city_timer = None
         self.code_city_towers = self._build_code_city_towers()
@@ -394,13 +402,35 @@ class MainShellScreen(Screen):
             self.code_city_timer.stop()
             self.code_city_timer = None
 
-    async def sync_from_app_state(self) -> None:
+    @on(events.ScreenResume)
+    async def _on_screen_resume_refresh(self) -> None:
+        """Refresh state when returning from modals (e.g. command palette)."""
+        await self.sync_from_app_state()
+
+    async def sync_from_app_state(self, *, include_tabs: bool = True) -> None:
+        if include_tabs:
+            await self._render_conversation_tabs()
         self._render_thread_list()
         self._render_status_line()
         self._render_tips_drawer()
         self._render_approval_prompt()
         self._render_kanban_board()
         await self._render_active_thread()
+        if not self.approval_visible:
+            self.query_one("#chat-input", Input).focus()
+
+    async def _render_conversation_tabs(self) -> None:
+        app = self.app
+        assert isinstance(app, OpenHandsCLIApp)
+        self._is_rendering_tabs = True
+        try:
+            tabs = self.query_one("#conversation-tabs", ConversationTabs)
+            await tabs.clear()
+            for thread in app.ordered_threads:
+                await tabs.add_tab(Tab(thread.title, id=thread.thread_id))
+            tabs.active = app.active_thread_id
+        finally:
+            self._is_rendering_tabs = False
 
     def _render_thread_list(self) -> None:
         app = self.app
@@ -421,7 +451,7 @@ class MainShellScreen(Screen):
         repo_name = thread.repository.rstrip("/").split("/")[-1] or thread.repository
         branch_name = app.branch_name
         self.query_one("#status-footer", Static).update(
-            f"📦 {repo_name}  |  "
+            f"<> {repo_name}  |  "
             f"⎇ {branch_name}  |  "
             f"Model: {app.model_name}"
         )
@@ -790,6 +820,15 @@ class MainShellScreen(Screen):
             classes=f"chat-line {message.role}",
             parser_factory=markdown_parser_no_linkify,
         )
+
+    @on(ConversationTabs.TabActivated, "#conversation-tabs")
+    async def on_conversation_tab_activated(self, event: Tabs.TabActivated) -> None:
+        if self._is_rendering_tabs or event.tab is None or event.tab.id is None:
+            return
+        app = self.app
+        assert isinstance(app, OpenHandsCLIApp)
+        app.set_active_thread(event.tab.id)
+        await self.sync_from_app_state(include_tabs=False)
 
     @on(OptionList.OptionSelected, "#threads")
     async def on_thread_selected(self, event: OptionList.OptionSelected) -> None:
@@ -1490,7 +1529,7 @@ class OpenHandsCLIApp(App):
     def create_thread(self) -> None:
         self.thread_count += 1
         thread_id = f"thread-{self.thread_count + len(self.threads)}"
-        title = f"Prototype Flow {self.thread_count}"
+        title = "New Session"
         repository = (
             "./workspace/new-product"
             if self.repo_source == "local"

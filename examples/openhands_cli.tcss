@@ -121,6 +121,34 @@ OptionList:focus > .option-list--option-highlighted {
     padding: 0;
 }
 
+/* Conversation tabs at top - black background, thin grey/white underlines */
+#conversation-tabs {
+    dock: top;
+    height: 3;
+    background: #000000;
+}
+
+#conversation-tabs Tab {
+    color: #a0a0a8;
+}
+
+#conversation-tabs Tab:hover {
+    color: #d0d0d8;
+}
+
+#conversation-tabs Tab.-active {
+    color: #e0e0e8;
+}
+
+#conversation-tabs Underline {
+    height: 1;
+}
+
+#conversation-tabs .underline--bar {
+    background: #6a6a70;
+    color: white;
+}
+
 #onboarding-banner {
     display: none;
     height: auto;
@@ -136,7 +164,6 @@ OptionList:focus > .option-list--option-highlighted {
 
 #status-footer {
     height: auto;
-    border-top: solid #555555;
     background: #000000;
     color: #f2f2f2;
     padding: 0 1;
@@ -301,7 +328,7 @@ OptionList:focus > .option-list--option-highlighted {
 }
 
 #chat-input {
-    margin: 0 1 1 1;
+    margin: 0 1 0 1;
     border: round #8a8a8a;
     background: #000000;
     color: #f2f2f2;
