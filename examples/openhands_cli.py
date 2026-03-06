@@ -683,7 +683,7 @@ class MainShellScreen(Screen):
         branch_name = app.branch_name
         repo_display = repo_name if len(repo_name) <= 12 else f"{repo_name[:11]}…"
         branch_display = branch_name if len(branch_name) <= 12 else f"{branch_name[:11]}…"
-        self.query_one("#status-left", Static).update(f"<> {repo_display}   ⎇ {branch_display}   ")
+        self.query_one("#status-left", Static).update(f"[#8a8a8a]<>[/] {repo_display}   [#8a8a8a]⎇[/] {branch_display}   ")
         model_picker = self.query_one("#model-picker", Select)
         model_picker.set_options((model, model) for model in app.models)
         model_picker.value = app.model_name
@@ -1680,7 +1680,6 @@ class OpenHandsCLIApp(App):
 
     CSS_PATH = "openhands_cli.tcss"
     TITLE = "OpenHands CLI"
-    SUB_TITLE = "Clickable design prototype"
 
     COMMANDS = App.COMMANDS | {OpenHandsCommandProvider}
     SCREENS = {"startup": OnboardingScreen, "main": MainShellScreen}
