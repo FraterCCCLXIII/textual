@@ -10,17 +10,77 @@ import re
 from uuid import uuid4
 
 from textual import events, on
+from textual.actions import SkipAction
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.command import Hit, Hits, Provider
 from textual.containers import Container, Grid, Horizontal, Vertical, VerticalScroll
+from textual.geometry import Region
 from textual.screen import ModalScreen, Screen
-from textual.widgets import Button, Footer, Input, Label, Markdown, OptionList, Static, Tab, Tabs
+from textual.strip import Strip
+from textual.widgets import Button, Footer, Input, Label, Markdown, OptionList, Select, Static, Tab, Tabs
+from textual.widgets._select import SelectCurrent, SelectOverlay
 from textual.widgets.option_list import Option
+from rich.segment import Segment
 
 
-class ConversationTabs(Tabs, can_focus=False):
-    """Tabs for conversations - not focusable so chat input keeps focus."""
+class CloudPickerOverlay(SelectOverlay):
+    """SelectOverlay that renders the separator row as true border T-junctions (├ / ┤)."""
+
+    def render_lines(self, crop: Region) -> list[Strip]:
+        self._update_lines()
+        strips = super().render_lines(crop)
+
+        # Find the separator option — its prompt is a string of ─ chars
+        sep_index = None
+        for i, option in enumerate(self.options):
+            prompt = option.prompt
+            if isinstance(prompt, str) and prompt.startswith("─"):
+                sep_index = i
+                break
+
+        if sep_index is None:
+            return strips
+
+        # Map separator option content-y → widget-y
+        try:
+            content_y = self._index_to_line[sep_index] - self.scroll_offset.y
+        except KeyError:
+            return strips
+
+        widget_y = content_y + self.styles.gutter.top
+        local_y = widget_y - crop.y
+        if not (0 <= local_y < len(strips)):
+            return strips
+
+        # Swap the left │ → ├ and right │ → ┤ on the separator row
+        segments = list(strips[local_y])
+        if len(segments) >= 2:
+            left_seg = segments[0]
+            right_seg = segments[-1]
+            if left_seg.text == "│":
+                segments[0] = Segment("├", left_seg.style)
+            if right_seg.text == "│":
+                segments[-1] = Segment("┤", right_seg.style)
+            strips[local_y] = Strip(segments, strips[local_y].cell_length)
+
+        return strips
+
+
+class CloudPickerSelect(Select[str]):
+    """Select widget whose overlay renders separators as proper border T-junctions."""
+
+    def compose(self) -> ComposeResult:
+        yield SelectCurrent(self.prompt)
+        yield CloudPickerOverlay(type_to_search=self._type_to_search).data_bind(
+            compact=Select.compact
+        )
+
+
+class ConversationTabs(Tabs):
+    """Tabs for conversations. Focus returns to chat input after tab switch."""
+
+
 from markdown_it import MarkdownIt
 from rich.text import Text
 
@@ -90,6 +150,36 @@ class ModalDialogScreen(ModalScreen[None]):
         )
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
+        self.dismiss()
+
+
+class CloudConnectModalScreen(ModalScreen[None]):
+    """Minimal cloud connect dialog launched from the status bar dropdown."""
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="cloud-connect-modal"):
+            yield Static("Sign in with OpenHands Cloud", id="cloud-connect-title")
+            yield Static("Browser opened. Complete login in your browser.", id="cloud-connect-body")
+            yield Static(
+                "https://app.all-hands.dev/oauth/device?code=NXYZ5678",
+                id="cloud-connect-link",
+            )
+            yield Static(
+                "Waiting for authentication to complete...",
+                id="cloud-connect-waiting",
+            )
+            yield Button("Cancel", id="cloud-connect-cancel")
+
+    @on(Button.Pressed, "#cloud-connect-cancel")
+    def on_cloud_connect_cancel(self) -> None:
+        self.dismiss()
+
+    @on(events.Click, "#cloud-connect-link")
+    def on_cloud_connect_link_clicked(self) -> None:
+        app = self.app
+        assert isinstance(app, OpenHandsCLIApp)
+        app.cloud_connected = True
+        self.notify("Cloud authentication confirmed.")
         self.dismiss()
 
 
@@ -319,7 +409,6 @@ class MainShellScreen(Screen):
         ("ctrl+l", "toggle_thread_drawer", "Drawer"),
         ("ctrl+n", "new_thread", "New Thread"),
         ("ctrl+r", "cycle_repo_source", "Repo"),
-        ("ctrl+m", "cycle_model", "Model"),
         ("ctrl+s", "toggle_task_output_details", "Details"),
         ("ctrl+d,ctrl+w", "toggle_tips_drawer", "Tips"),
         ("ctrl+t", "app.toggle_dark", "Theme"),
@@ -340,7 +429,30 @@ class MainShellScreen(Screen):
                             placeholder="Type a request (or @path/to/file), then press Enter",
                             id="chat-input",
                         )
-                        yield Static(id="status-footer")
+                        with Horizontal(id="status-footer"):
+                            yield Static(id="status-left")
+                            yield Static("✦ Model:", id="model-label")
+                            yield Select(
+                                (
+                                    (model, model)
+                                    for model in OpenHandsCLIApp.DEFAULT_MODELS
+                                ),
+                                value=OpenHandsCLIApp.DEFAULT_MODELS[0],
+                                allow_blank=False,
+                                compact=True,
+                                id="model-picker",
+                            )
+                            yield Static("^m     ⛁", id="model-shortcut")
+                            yield CloudPickerSelect(
+                                (
+                                    (" Local", "local"),
+                                    (" Connect to Cloud", "connect_cloud"),
+                                ),
+                                value="local",
+                                allow_blank=False,
+                                compact=True,
+                                id="cloud-picker",
+                            )
                         yield Footer()
                 with Container(id="board-view"):
                     with Horizontal(id="board-columns"):
@@ -396,11 +508,21 @@ class MainShellScreen(Screen):
         self._apply_thread_drawer_visibility()
         self._apply_workspace_mode()
         self._render_code_city_scene()
+        self._set_alternate_scroll_mode(True)
 
     def on_unmount(self) -> None:
+        self._set_alternate_scroll_mode(False)
         if self.code_city_timer is not None:
             self.code_city_timer.stop()
             self.code_city_timer = None
+
+    def _set_alternate_scroll_mode(self, enabled: bool) -> None:
+        """Hint supported terminals to route wheel events to the app in alt-screen."""
+        driver = self.app._driver
+        if driver is None:
+            return
+        driver.write("\x1b[?1007h" if enabled else "\x1b[?1007l")
+        driver.flush()
 
     @on(events.ScreenResume)
     async def _on_screen_resume_refresh(self) -> None:
@@ -450,11 +572,15 @@ class MainShellScreen(Screen):
         thread = app.active_thread
         repo_name = thread.repository.rstrip("/").split("/")[-1] or thread.repository
         branch_name = app.branch_name
-        self.query_one("#status-footer", Static).update(
-            f"<> {repo_name}  |  "
-            f"⎇ {branch_name}  |  "
-            f"Model: {app.model_name}"
-        )
+        repo_display = repo_name if len(repo_name) <= 12 else f"{repo_name[:11]}…"
+        branch_display = branch_name if len(branch_name) <= 12 else f"{branch_name[:11]}…"
+        self.query_one("#status-left", Static).update(f"<> {repo_display}   ⎇ {branch_display}   ")
+        model_picker = self.query_one("#model-picker", Select)
+        model_picker.set_options((model, model) for model in app.models)
+        model_picker.value = app.model_name
+        cloud_picker = self.query_one("#cloud-picker", Select)
+        cloud_picker.set_options((label, value) for label, value in app.cloud_picker_options)
+        cloud_picker.value = "cloud" if app.repo_source == "cloud" else "local"
 
     def _render_tips_drawer(self) -> None:
         drawer = self.query_one("#tips-drawer", Static)
@@ -830,6 +956,20 @@ class MainShellScreen(Screen):
         app.set_active_thread(event.tab.id)
         await self.sync_from_app_state(include_tabs=False)
 
+    @on(Tab.Clicked)
+    async def on_conversation_tab_clicked(self, event: Tab.Clicked) -> None:
+        """Handle direct tab clicks even when activation event is missed."""
+        tabs = self.query_one("#conversation-tabs", ConversationTabs)
+        if tabs not in event.tab.ancestors:
+            return
+        if self._is_rendering_tabs or event.tab.id is None:
+            return
+        event.stop()
+        app = self.app
+        assert isinstance(app, OpenHandsCLIApp)
+        app.set_active_thread(event.tab.id)
+        await self.sync_from_app_state(include_tabs=False)
+
     @on(OptionList.OptionSelected, "#threads")
     async def on_thread_selected(self, event: OptionList.OptionSelected) -> None:
         if event.option_id is None:
@@ -945,16 +1085,21 @@ class MainShellScreen(Screen):
     async def action_cycle_repo_source(self) -> None:
         app = self.app
         assert isinstance(app, OpenHandsCLIApp)
-        app.cycle_repo_source()
+        changed = app.cycle_repo_source()
         await self.sync_from_app_state()
-        self.notify(f"Repository source set to {app.repo_source}.")
+        if changed:
+            self.notify(f"Repository source set to {app.repo_source}.")
+        else:
+            self.notify("Connect to Cloud before switching to cloud source.")
 
     async def action_cycle_model(self) -> None:
-        app = self.app
-        assert isinstance(app, OpenHandsCLIApp)
-        app.cycle_model()
-        await self.sync_from_app_state()
-        self.notify(f"Model switched to {app.model_name}.")
+        model_picker = self.query_one("#model-picker", Select)
+        if model_picker.expanded:
+            model_picker.expanded = False
+            self.query_one("#chat-input", Input).focus()
+            return
+        model_picker.focus()
+        model_picker.action_show_overlay()
 
     async def action_toggle_tips_drawer(self) -> None:
         self.tips_visible = not self.tips_visible
@@ -967,13 +1112,35 @@ class MainShellScreen(Screen):
         self.notify(f"Conversation drawer {state}.")
 
     async def on_key(self, event: events.Key) -> None:
+        chat_input = self.query_one("#chat-input", Input)
         # Some terminals/input states can intercept Ctrl bindings; keep a direct fallback.
+        if event.key in {"ctrl+c", "super+c"}:
+            event.stop()
+            try:
+                self.action_copy_text()
+            except SkipAction:
+                self.notify("Select text first, then press Ctrl/Cmd+C.")
+            else:
+                self.notify("Copied selected text.")
+            return
         if event.key in {"ctrl+d", "ctrl+w"}:
             event.stop()
             await self.action_toggle_tips_drawer()
             return
+        if event.key == "ctrl+m" and chat_input.has_focus:
+            event.stop()
+            await self.action_cycle_model()
+            return
 
-        chat_input = self.query_one("#chat-input", Input)
+        if (
+            event.key == "enter"
+            and "ctrl+m" in event.aliases
+            and chat_input.has_focus
+            and chat_input.value.strip() == ""
+        ):
+            event.stop()
+            await self.action_cycle_model()
+            return
         input_value = chat_input.value.strip()
         slash_visible = "-visible" in self.query_one("#slash-menu", OptionList).classes
         if not (input_value.startswith("/") and slash_visible and self.slash_matches):
@@ -1019,6 +1186,55 @@ class MainShellScreen(Screen):
         self.approval_visible = False
         await self.sync_from_app_state()
         self.query_one("#chat-input", Input).focus()
+
+    @on(Select.Changed, "#model-picker")
+    async def on_model_picker_changed(self, event: Select.Changed[str]) -> None:
+        if event.value is Select.BLANK:
+            return
+        app = self.app
+        assert isinstance(app, OpenHandsCLIApp)
+        selected_model = event.value
+        if selected_model not in app.models:
+            return
+        previous_index = app.model_index
+        app.model_index = app.models.index(selected_model)
+        await self.sync_from_app_state(include_tabs=False)
+        if app.model_index != previous_index:
+            self.notify(f"Model switched to {app.model_name}.")
+
+    @on(Select.Changed, "#cloud-picker")
+    async def on_cloud_picker_changed(self, event: Select.Changed[str]) -> None:
+        if event.value is Select.BLANK:
+            return
+        app = self.app
+        assert isinstance(app, OpenHandsCLIApp)
+        value = event.value
+        cloud_picker = self.query_one("#cloud-picker", Select)
+        if value == "connect_cloud":
+            self.app.push_screen(CloudConnectModalScreen())
+            cloud_picker.value = "local"
+            return
+        if value == "separator":
+            cloud_picker.value = "cloud" if app.repo_source == "cloud" else "local"
+            return
+        if value == "disconnect_cloud":
+            app.cloud_connected = False
+            app.set_repo_source("local")
+            await self.sync_from_app_state(include_tabs=False)
+            self.notify("Disconnected from Cloud.")
+            return
+        if value == "cloud":
+            if not app.set_repo_source("cloud"):
+                cloud_picker.value = "local"
+                self.notify("Connect to Cloud first.")
+                return
+            await self.sync_from_app_state(include_tabs=False)
+            self.notify("Repository source set to cloud.")
+            return
+        if value == "local":
+            if app.set_repo_source("local"):
+                await self.sync_from_app_state(include_tabs=False)
+                self.notify("Repository source set to local.")
 
     async def _run_slash_command(self, raw_text: str) -> bool:
         app = self.app
@@ -1171,10 +1387,17 @@ class MainShellScreen(Screen):
                 )
                 return True
             if command_arg in {"local", "cloud"}:
-                app.repo_source_index = 0 if command_arg == "local" else 1
+                changed = app.set_repo_source(command_arg)
+                if command_arg == "cloud" and not changed and app.repo_source != "cloud":
+                    self.notify("Connect to Cloud before switching to cloud source.")
+                else:
+                    self.notify(f"Repository source set to {app.repo_source}.")
             else:
-                app.cycle_repo_source()
-            self.notify(f"Repository source set to {app.repo_source}.")
+                changed = app.cycle_repo_source()
+                if changed:
+                    self.notify(f"Repository source set to {app.repo_source}.")
+                else:
+                    self.notify("Connect to Cloud before switching to cloud source.")
         elif command_name == "model":
             if selected_from_menu and not command_arg:
                 self._show_slash_submenu(
@@ -1332,13 +1555,22 @@ class OpenHandsCLIApp(App):
 
     COMMANDS = App.COMMANDS | {OpenHandsCommandProvider}
     SCREENS = {"startup": OnboardingScreen, "main": MainShellScreen}
+    DEFAULT_MODELS = [
+        "gpt-4.1",
+        "claude-sonnet",
+        "gemini-2.5-pro",
+        "o3-mini",
+        "claude-opus",
+        "gpt-4.1-mini",
+    ]
 
     def __init__(self) -> None:
         super().__init__()
         self.repo_sources = ["local", "cloud"]
         self.repo_source_index = 0
+        self.cloud_connected = False
         self.branch_name = "feature/kanban-interactive-board"
-        self.models = ["gpt-4.1", "claude-sonnet", "gemini-2.5-pro"]
+        self.models = self.DEFAULT_MODELS.copy()
         self.model_index = 0
         self.thread_count = 0
         self.threads = self._build_seed_threads()
@@ -1352,6 +1584,17 @@ class OpenHandsCLIApp(App):
     @property
     def repo_source(self) -> str:
         return self.repo_sources[self.repo_source_index]
+
+    @property
+    def cloud_picker_options(self) -> list[tuple[str, str]]:
+        if self.cloud_connected:
+            return [
+                (" Local", "local"),
+                (" Cloud", "cloud"),
+                ("─" * 40, "separator"),
+                (" Disconnect Cloud", "disconnect_cloud"),
+            ]
+        return [(" Local", "local"), (" Connect to Cloud", "connect_cloud")]
 
     @property
     def model_name(self) -> str:
@@ -1520,8 +1763,18 @@ class OpenHandsCLIApp(App):
         if thread_id in self.threads:
             self.active_thread_id = thread_id
 
-    def cycle_repo_source(self) -> None:
-        self.repo_source_index = (self.repo_source_index + 1) % len(self.repo_sources)
+    def cycle_repo_source(self) -> bool:
+        target = "cloud" if self.repo_source == "local" else "local"
+        return self.set_repo_source(target)
+
+    def set_repo_source(self, source: str) -> bool:
+        if source == "cloud" and not self.cloud_connected:
+            self.repo_source_index = 0
+            return False
+        source_index = 0 if source == "local" else 1
+        changed = self.repo_source_index != source_index
+        self.repo_source_index = source_index
+        return changed
 
     def cycle_model(self) -> None:
         self.model_index = (self.model_index + 1) % len(self.models)
@@ -1738,4 +1991,4 @@ class OpenHandsCLIApp(App):
 
 if __name__ == "__main__":
     app = OpenHandsCLIApp()
-    app.run()
+    app.run(inline=False, mouse=True)

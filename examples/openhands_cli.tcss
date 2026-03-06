@@ -163,10 +163,149 @@ OptionList:focus > .option-list--option-highlighted {
 }
 
 #status-footer {
-    height: auto;
+    height: 1;
+    width: 1fr;
     background: #000000;
     color: #f2f2f2;
     padding: 0 1;
+    align: left middle;
+}
+
+#status-left {
+    width: auto;
+    color: #f2f2f2;
+}
+
+#model-label {
+    width: auto;
+    color: #f2f2f2;
+    text-style: bold;
+    margin-right: 0;
+}
+
+#model-shortcut {
+    width: auto;
+    color: #8a8a8a;
+    margin-right: 0;
+}
+
+#cloud-label {
+    width: auto;
+    color: #f2f2f2;
+    margin-right: 0;
+}
+
+#cloud-picker {
+    width: auto;
+    min-width: 8;
+    border: none;
+    background: transparent;
+    color: #f2f2f2;
+    margin-left: 1;
+    height: 1;
+}
+
+#cloud-picker > SelectCurrent {
+    width: auto;
+    min-width: 8;
+    height: 1;
+    border: none !important;
+    background: transparent;
+    background-tint: 0%;
+    padding: 0;
+}
+
+#cloud-picker > SelectCurrent Static#label {
+    width: auto;
+}
+
+#cloud-picker > SelectCurrent .arrow {
+    width: auto;
+    padding: 0 0 0 1;
+}
+
+#cloud-picker > SelectOverlay {
+    width: auto;
+    min-width: 22;
+    padding: 0;
+    constrain: none inflect;
+}
+
+#cloud-picker:hover {
+    background: transparent;
+    color: #f2f2f2;
+}
+
+#cloud-picker:focus {
+    border: none;
+    background: transparent;
+    color: #f2f2f2;
+}
+
+#cloud-picker:focus > SelectCurrent,
+#cloud-picker.-expanded > SelectCurrent {
+    border: none !important;
+    background: transparent;
+    background-tint: 0%;
+}
+
+#model-picker {
+    width: auto;
+    min-width: 9;
+    border: none;
+    background: transparent;
+    color: #f2f2f2;
+    text-style: bold;
+    margin: 0;
+    height: 1;
+}
+
+#model-picker > SelectCurrent {
+    width: auto;
+    min-width: 9;
+    height: 1;
+    border: none !important;
+    background: transparent;
+    background-tint: 0%;
+    padding: 0;
+}
+
+#model-picker > SelectCurrent Static#label {
+    width: auto;
+}
+
+#model-picker > SelectCurrent .arrow {
+    width: auto;
+    padding: 0 0 0 1;
+}
+
+#model-picker > SelectOverlay {
+    width: auto;
+    min-width: 24;
+    constrain: none inflect;
+}
+
+#model-picker:hover {
+    background: transparent;
+    color: #f2f2f2;
+}
+
+#model-picker:focus {
+    border: none;
+    background: transparent;
+    color: #f2f2f2;
+}
+
+#model-picker:focus > SelectCurrent {
+    border: none !important;
+    background: transparent;
+    background-tint: 0%;
+}
+
+#model-picker.-expanded > SelectCurrent {
+    border: none !important;
+    background: transparent;
+    background-tint: 0%;
 }
 
 #workspace {
@@ -474,5 +613,58 @@ ModalDialogScreen {
 }
 
 #modal-dialog Button:focus {
+    background: transparent !important;
+}
+
+CloudConnectModalScreen {
+    align: center middle;
+}
+
+#cloud-connect-modal {
+    width: auto;
+    height: auto;
+    max-width: 90%;
+    border: round #8a8a8a;
+    padding: 1 2;
+}
+
+#cloud-connect-title {
+    width: auto;
+    text-style: bold;
+    content-align: center middle;
+    padding: 1 0;
+    margin-bottom: 1;
+}
+
+#cloud-connect-body {
+    width: auto;
+    content-align: center middle;
+    margin-top: 1;
+}
+
+#cloud-connect-link {
+    width: auto;
+    border: round #8a8a8a;
+    content-align: center middle;
+    padding: 1 2;
+    margin: 1 0;
+    text-style: bold;
+}
+
+#cloud-connect-waiting {
+    width: auto;
+    content-align: center middle;
+    margin-bottom: 1;
+}
+
+#cloud-connect-cancel {
+    width: 16;
+    align-horizontal: center;
+    border: round #8a8a8a;
+    background: transparent !important;
+}
+
+#cloud-connect-cancel:hover,
+#cloud-connect-cancel:focus {
     background: transparent !important;
 }
