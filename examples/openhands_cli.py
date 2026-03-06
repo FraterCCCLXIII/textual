@@ -10,6 +10,7 @@ import re
 from uuid import uuid4
 
 from textual import events, on
+from textual.message import Message
 from textual.actions import SkipAction
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -508,6 +509,30 @@ class LLMProfile:
     ask: str
 
 
+@dataclass
+class RuntimeProfile:
+    name: str
+    model: str           # LiteLLM format: provider/model-name
+    profile_type: str    # "user" (editable) or "system" (read-only)
+    temperature: float = 0.0
+    base_url: str = ""
+    api_key: str = ""
+    is_default: bool = False
+
+    @property
+    def is_editable(self) -> bool:
+        return self.profile_type == "user"
+
+    @property
+    def provider(self) -> str:
+        """Provider prefix extracted from the LiteLLM model string."""
+        return self.model.split("/")[0] if "/" in self.model else self.model
+
+    @property
+    def storage_path(self) -> str:
+        return f"~/.openhands/profiles/{self.name}.json"
+
+
 class LLMProfileModalScreen(ModalScreen["LLMProfile | None"]):
     """Modal for assigning a model to each agent mode (Code, Plan, Ask)."""
 
@@ -559,6 +584,412 @@ class LLMProfileModalScreen(ModalScreen["LLMProfile | None"]):
     @on(Button.Pressed, "#profile-cancel")
     def action_cancel(self) -> None:
         self.dismiss(None)
+
+
+class CreateProfileModal(ModalScreen["RuntimeProfile | None"]):
+    """Modal for creating or editing a user runtime profile."""
+
+    BINDINGS = [("escape", "cancel", "Cancel")]
+
+    def __init__(
+        self,
+        profile: RuntimeProfile | None = None,
+        existing_names: list[str] | None = None,
+    ) -> None:
+        super().__init__()
+        self._profile = profile
+        self._editing = profile is not None
+        self._existing_names = existing_names or []
+
+    def compose(self) -> ComposeResult:
+        title = "Edit Profile" if self._editing else "Create Profile"
+        p = self._profile
+        with Vertical(id="cp-modal"):
+            yield Static(title, id="cp-title")
+            yield Static(
+                "Model uses LiteLLM format: provider/model-name",
+                id="cp-subtitle",
+            )
+            with Vertical(id="cp-form"):
+                with Horizontal(classes="cp-row"):
+                    yield Static("Name", classes="cp-label")
+                    yield Input(
+                        value=p.name if p else "",
+                        placeholder="my-profile",
+                        id="cp-name",
+                    )
+                with Horizontal(classes="cp-row"):
+                    yield Static("Model", classes="cp-label")
+                    yield Input(
+                        value=p.model if p else "",
+                        placeholder="anthropic/claude-sonnet-4-5-20250929",
+                        id="cp-model",
+                    )
+                with Horizontal(classes="cp-row"):
+                    yield Static("Temperature", classes="cp-label")
+                    yield Input(
+                        value=str(p.temperature) if p else "0.0",
+                        placeholder="0.0",
+                        id="cp-temperature",
+                    )
+                with Horizontal(classes="cp-row"):
+                    yield Static("Base URL", classes="cp-label")
+                    yield Input(
+                        value=p.base_url if p else "",
+                        placeholder="https://api.openai.com/v1  (optional)",
+                        id="cp-base-url",
+                    )
+                with Horizontal(classes="cp-row"):
+                    yield Static("API Key", classes="cp-label")
+                    yield Input(
+                        value=p.api_key if p else "",
+                        placeholder="sk-...  (leave blank to use environment)",
+                        password=True,
+                        id="cp-api-key",
+                    )
+            with Horizontal(id="cp-buttons"):
+                yield Button("Save" if self._editing else "Create", id="cp-save")
+                yield Button("Cancel", id="cp-cancel")
+
+    @on(Button.Pressed, "#cp-save")
+    def on_save(self) -> None:
+        name = self.query_one("#cp-name", Input).value.strip()
+        model = self.query_one("#cp-model", Input).value.strip()
+        temp_str = self.query_one("#cp-temperature", Input).value.strip()
+        base_url = self.query_one("#cp-base-url", Input).value.strip()
+        api_key = self.query_one("#cp-api-key", Input).value.strip()
+
+        if not name:
+            self.notify("Profile name is required.", severity="error")
+            return
+        if "/" in name or name.startswith("."):
+            self.notify("Name cannot contain slashes or start with a dot.", severity="error")
+            return
+        if name in self._existing_names:
+            self.notify(f'A profile named "{name}" already exists.', severity="error")
+            return
+        if not model:
+            self.notify("Model is required (e.g. anthropic/claude-sonnet-4-5-20250929).", severity="error")
+            return
+        try:
+            temperature = float(temp_str) if temp_str else 0.0
+        except ValueError:
+            self.notify("Temperature must be a number (e.g. 0.0, 0.7).", severity="error")
+            return
+
+        is_default = self._profile.is_default if self._profile else False
+        self.dismiss(RuntimeProfile(
+            name=name,
+            model=model,
+            profile_type="user",
+            temperature=temperature,
+            base_url=base_url,
+            api_key=api_key,
+            is_default=is_default,
+        ))
+
+    @on(Button.Pressed, "#cp-cancel")
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
+class DeleteProfileConfirmModal(ModalScreen[bool]):
+    """Confirmation before permanently deleting a local profile."""
+
+    BINDINGS = [("escape", "action_cancel", "Cancel")]
+
+    def __init__(self, profile_name: str) -> None:
+        super().__init__()
+        self._profile_name = profile_name
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="dp-modal"):
+            yield Static(f'Delete profile "{self._profile_name}"?', id="dp-title")
+            yield Static("This cannot be undone.", id="dp-body")
+            with Horizontal(id="dp-buttons"):
+                yield Button("Delete", id="dp-confirm", variant="error")
+                yield Button("Cancel", id="dp-cancel")
+
+    @on(Button.Pressed, "#dp-confirm")
+    def on_confirm(self) -> None:
+        self.dismiss(True)
+
+    @on(Button.Pressed, "#dp-cancel")
+    def action_cancel(self) -> None:
+        self.dismiss(False)
+
+
+class ProfileManagerPanel(Vertical):
+    """Embedded profile manager panel — shown in-place like ChangesPanel."""
+
+    class CloseRequested(Message):
+        """Posted when the user requests the panel to close."""
+
+    BINDINGS = [
+        Binding("d", "set_default", "Default"),
+        Binding("e", "edit_profile", "Edit"),
+        Binding("n", "new_profile", "New"),
+        Binding("x", "delete_profile", "Delete"),
+        Binding("c", "copy_profile", "Copy"),
+        Binding("r", "refresh_cloud", "Refresh"),
+        Binding("escape", "request_close", "Close"),
+        Binding("q", "request_close", "Close", show=False),
+    ]
+
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        super().__init__(*args, **kwargs)
+        self._profiles: list[RuntimeProfile] = []
+        self._active_name = ""
+        self._selected_index = 0
+
+    def compose(self) -> ComposeResult:
+        with Horizontal(id="pm-header"):
+            yield Static("LLM Profile Manager", id="pm-title")
+            yield Static("", id="pm-active-label")
+            yield Static("", id="pm-default-label")
+            yield Button("✕ Close", id="pm-close")
+        with Horizontal(id="pm-body"):
+            yield OptionList(id="pm-profile-list")
+            with Vertical(id="pm-details-panel"):
+                yield Static("", id="pm-details-content")
+        yield Static(
+            "↑↓ Move   Enter Switch   n New   e Edit   d Default   x Delete   c Copy   r Refresh   q Close",
+            id="pm-shortcuts",
+        )
+
+    def populate(self) -> None:
+        """Sync from app state and focus the list."""
+        app = self.app
+        assert isinstance(app, OpenHandsCLIApp)
+        self._profiles = list(app.runtime_profiles)
+        self._active_name = app.active_profile_name
+        self._selected_index = 0
+        self._rebuild_list()
+        self._update_header()
+        self._update_details()
+
+    def _rebuild_list(self) -> None:
+        option_list = self.query_one("#pm-profile-list", OptionList)
+        option_list.clear_options()
+        for profile in self._profiles:
+            option_list.add_option(self._make_option(profile))
+        if self._profiles:
+            idx = min(self._selected_index, len(self._profiles) - 1)
+            option_list.highlighted = idx
+        option_list.focus()
+
+    def _make_option(self, profile: RuntimeProfile) -> Option:
+        is_active = profile.name == self._active_name
+        marker = "●" if is_active else "○"
+        marker_color = "#60c060" if is_active else "#555555"
+        name_color = "#ffffff" if is_active else "#d0d0d0"
+        name_col = profile.name[:20].ljust(20)
+        model_col = profile.model[:34].ljust(34)
+
+        badges: list[str] = []
+        if profile.profile_type == "system":
+            badges.append("[on #0d2040][#4a90d9] SYSTEM [/][/]")
+        else:
+            badges.append("[on #1a1a1a][#8a8a8a] USER [/][/]")
+        if profile.is_default:
+            badges.append("[on #2a2000][#f0c060] DEFAULT [/][/]")
+        if is_active:
+            badges.append("[on #002010][#60c060] ACTIVE [/][/]")
+
+        badge_str = " ".join(badges)
+        text = (
+            f"[{marker_color}]{marker}[/] "
+            f"[{name_color}]{name_col}[/]  "
+            f"[#707070]{model_col}[/]  "
+            f"{badge_str}"
+        )
+        return Option(text, id=profile.name)
+
+    def _update_header(self) -> None:
+        active = next((p for p in self._profiles if p.name == self._active_name), None)
+        default = next((p for p in self._profiles if p.is_default), None)
+        active_text = (
+            f"[#60c060]● Active:[/]  [bold]{active.name}[/]" if active else "[#606060]● Active:  none[/]"
+        )
+        default_text = (
+            f"[#f0c060]◆ Default:[/]  [bold]{default.name}[/]" if default else "[#606060]◆ Default:  none[/]"
+        )
+        self.query_one("#pm-active-label", Static).update(active_text)
+        self.query_one("#pm-default-label", Static).update(default_text)
+
+    def _update_details(self) -> None:
+        if not self._profiles or self._selected_index >= len(self._profiles):
+            self.query_one("#pm-details-content", Static).update("")
+            return
+        p = self._profiles[self._selected_index]
+        is_active = p.name == self._active_name
+        type_label = "System (read-only)" if p.profile_type == "system" else "User"
+        active_label = "[#60c060]Yes ●[/]" if is_active else "[#606060]No[/]"
+        default_label = "[#f0c060]Yes ◆[/]" if p.is_default else "[#606060]No[/]"
+        editable_label = "[#a0a0a0]No[/]" if not p.is_editable else "[#c0c0c0]Yes[/]"
+        base_url_display = p.base_url if p.base_url else "[#505050]default[/]"
+        api_key_display = (
+            "[#60c060]set (stored)[/]" if p.api_key else "[#505050]from environment[/]"
+        )
+        details = (
+            f"[bold #c0c0c0]Profile[/]      {p.name}\n\n"
+            f"[bold #c0c0c0]Model[/]        {p.model}\n\n"
+            f"[bold #c0c0c0]Temperature[/]  {p.temperature}\n\n"
+            f"[bold #c0c0c0]Base URL[/]     {base_url_display}\n\n"
+            f"[bold #c0c0c0]API Key[/]      {api_key_display}\n\n"
+            f"[bold #c0c0c0]Type[/]         {type_label}\n\n"
+            f"[bold #c0c0c0]Active[/]       {active_label}\n\n"
+            f"[bold #c0c0c0]Default[/]      {default_label}\n\n"
+            f"[bold #c0c0c0]Editable[/]     {editable_label}\n\n"
+            f"[bold #c0c0c0]Storage[/]      [#505050]{p.storage_path}[/]"
+        )
+        self.query_one("#pm-details-content", Static).update(details)
+
+    @on(OptionList.OptionHighlighted, "#pm-profile-list")
+    def on_option_highlighted(self, event: OptionList.OptionHighlighted) -> None:
+        self._selected_index = event.option_index
+        self._update_details()
+
+    @on(OptionList.OptionSelected, "#pm-profile-list")
+    def on_option_selected(self, _event: OptionList.OptionSelected) -> None:
+        self.action_switch_active()
+
+    def action_switch_active(self) -> None:
+        if not self._profiles or self._selected_index >= len(self._profiles):
+            return
+        profile = self._profiles[self._selected_index]
+        self._active_name = profile.name
+        app = self.app
+        assert isinstance(app, OpenHandsCLIApp)
+        app.active_profile_name = self._active_name
+        self._rebuild_list()
+        self._update_header()
+        self._update_details()
+        self.notify(f"✓ Active profile set to: {profile.name}")
+
+    def action_set_default(self) -> None:
+        if not self._profiles or self._selected_index >= len(self._profiles):
+            return
+        profile = self._profiles[self._selected_index]
+        for p in self._profiles:
+            p.is_default = False
+        profile.is_default = True
+        app = self.app
+        assert isinstance(app, OpenHandsCLIApp)
+        app.runtime_profiles = self._profiles
+        self._rebuild_list()
+        self._update_header()
+        self._update_details()
+        self.notify(f"◆ Default profile set to: {profile.name}")
+
+    def action_edit_profile(self) -> None:
+        if not self._profiles or self._selected_index >= len(self._profiles):
+            return
+        profile = self._profiles[self._selected_index]
+        if not profile.is_editable:
+            self.notify("Cloud profiles cannot be edited.", severity="warning")
+            return
+
+        def _on_edited(result: RuntimeProfile | None) -> None:
+            if result is None:
+                return
+            idx = self._selected_index
+            result.is_default = self._profiles[idx].is_default
+            if self._active_name == self._profiles[idx].name:
+                self._active_name = result.name
+            self._profiles[idx] = result
+            app = self.app
+            assert isinstance(app, OpenHandsCLIApp)
+            app.runtime_profiles = self._profiles
+            app.active_profile_name = self._active_name
+            self._rebuild_list()
+            self._update_header()
+            self._update_details()
+            self.notify(f"Profile '{result.name}' updated.")
+
+        # Exclude every name except the one being edited so renaming to the
+        # same name is allowed, but clashing with another profile is not.
+        existing = [p.name for p in self._profiles if p.name != profile.name]
+        self.app.push_screen(CreateProfileModal(profile, existing_names=existing), _on_edited)
+
+    def action_new_profile(self) -> None:
+        def _on_created(result: RuntimeProfile | None) -> None:
+            if result is None:
+                return
+            self._profiles.append(result)
+            self._selected_index = len(self._profiles) - 1
+            app = self.app
+            assert isinstance(app, OpenHandsCLIApp)
+            app.runtime_profiles = self._profiles
+            self._rebuild_list()
+            self._update_header()
+            self._update_details()
+            self.notify(f"Profile '{result.name}' created.")
+
+        existing = [p.name for p in self._profiles]
+        self.app.push_screen(CreateProfileModal(existing_names=existing), _on_created)
+
+    def action_delete_profile(self) -> None:
+        if not self._profiles or self._selected_index >= len(self._profiles):
+            return
+        profile = self._profiles[self._selected_index]
+        if not profile.is_editable:
+            self.notify("Cloud profiles cannot be deleted.", severity="warning")
+            return
+
+        def _on_confirmed(confirmed: bool) -> None:
+            if not confirmed:
+                return
+            was_active = profile.name == self._active_name
+            self._profiles.pop(self._selected_index)
+            if was_active and self._profiles:
+                self._active_name = self._profiles[0].name
+            self._selected_index = min(self._selected_index, max(0, len(self._profiles) - 1))
+            app = self.app
+            assert isinstance(app, OpenHandsCLIApp)
+            app.runtime_profiles = self._profiles
+            app.active_profile_name = self._active_name
+            self._rebuild_list()
+            self._update_header()
+            self._update_details()
+            self.notify(f"Profile '{profile.name}' deleted.")
+
+        self.app.push_screen(DeleteProfileConfirmModal(profile.name), _on_confirmed)
+
+    def action_copy_profile(self) -> None:
+        if not self._profiles or self._selected_index >= len(self._profiles):
+            return
+        source = self._profiles[self._selected_index]
+        base = source.name.split("/")[-1]
+        copy_name = f"{base}-copy"
+        existing_names = {p.name for p in self._profiles}
+        counter = 2
+        while copy_name in existing_names:
+            copy_name = f"{base}-copy{counter}"
+            counter += 1
+        new_profile = RuntimeProfile(
+            name=copy_name,
+            model=source.model,
+            profile_type="user",
+            temperature=source.temperature,
+            base_url=source.base_url,
+            api_key=source.api_key,
+        )
+        self._profiles.append(new_profile)
+        self._selected_index = len(self._profiles) - 1
+        app = self.app
+        assert isinstance(app, OpenHandsCLIApp)
+        app.runtime_profiles = self._profiles
+        self._rebuild_list()
+        self._update_header()
+        self._update_details()
+        self.notify(f"Profile copied as '{copy_name}'.")
+
+    def action_refresh_cloud(self) -> None:
+        self.notify("Cloud profiles refreshed.")
+
+    def action_request_close(self) -> None:
+        self.post_message(self.CloseRequested())
 
 
 class OpenHandsCommandProvider(Provider):
@@ -822,6 +1253,7 @@ class MainShellScreen(Screen):
                         with VerticalScroll(id="chat-view"):
                             pass
                         yield ChangesPanel(id="changes-panel")
+                        yield ProfileManagerPanel(id="pm-panel")
                         with Horizontal(id="chat-input-row"):
                             yield Static(">", id="chat-input-prefix")
                             yield Input(
@@ -902,6 +1334,7 @@ class MainShellScreen(Screen):
         self.board_task_to_thread: dict[str, str] = {}
         self._updating_cloud_picker = False
         self.changes_visible = False
+        self.pm_visible = False
         self.code_city_loop_length = max(
             (tower["z"] + tower["depth"] for tower in self.code_city_towers),
             default=240.0,
@@ -1049,6 +1482,31 @@ class MainShellScreen(Screen):
     def _set_changes_view_enabled(self, enabled: bool) -> None:
         self.changes_visible = enabled
         self._apply_changes_view_visibility()
+
+    def _apply_pm_visibility(self) -> None:
+        chat_view = self.query_one("#chat-view", VerticalScroll)
+        pm_panel = self.query_one("#pm-panel", ProfileManagerPanel)
+        if self.pm_visible:
+            chat_view.styles.display = "none"
+            pm_panel.add_class("-visible")
+        else:
+            chat_view.styles.display = "block"
+            pm_panel.remove_class("-visible")
+            self.query_one("#chat-input", Input).focus()
+
+    def _set_pm_view_enabled(self, enabled: bool) -> None:
+        if enabled:
+            self._set_changes_view_enabled(False)
+        self.pm_visible = enabled
+        self._apply_pm_visibility()
+
+    @on(ProfileManagerPanel.CloseRequested)
+    def on_pm_close_requested(self) -> None:
+        self._set_pm_view_enabled(False)
+
+    @on(Button.Pressed, "#pm-close")
+    def on_pm_close_pressed(self) -> None:
+        self._set_pm_view_enabled(False)
 
     def _setup_approval_options(self) -> None:
         option_list = self.query_one("#approval-options", OptionList)
@@ -1891,6 +2349,11 @@ class MainShellScreen(Screen):
                 LLMProfileModalScreen(app.llm_profile, app.models),
                 _on_profile_saved,
             )
+        elif command_name == "profile2":
+            show = not self.pm_visible
+            if show:
+                self.query_one("#pm-panel", ProfileManagerPanel).populate()
+            self._set_pm_view_enabled(show)
         elif command_name == "changes":
             show = not self.changes_visible
             if show:
@@ -2058,6 +2521,20 @@ class OpenHandsCLIApp(App):
             plan=self.DEFAULT_MODELS[0],
             ask=self.DEFAULT_MODELS[0],
         )
+        self.runtime_profiles: list[RuntimeProfile] = [
+            RuntimeProfile("gpt-5", "openai/gpt-5", "user", is_default=True),
+            RuntimeProfile("sonnet-4-5", "anthropic/claude-sonnet-4-5-20250929", "user"),
+            RuntimeProfile(
+                "local-debug",
+                "ollama/llama3",
+                "user",
+                temperature=0.0,
+                base_url="http://localhost:11434",
+            ),
+            RuntimeProfile("oh-gpt-5", "openai/gpt-5", "system"),
+            RuntimeProfile("oh-sonnet-fast", "anthropic/claude-sonnet-4-5", "system"),
+        ]
+        self.active_profile_name = "gpt-5"
         self.thread_count = 0
         self.threads = self._build_seed_threads()
         self.active_thread_id = next(iter(self.threads))
@@ -2132,6 +2609,7 @@ class OpenHandsCLIApp(App):
             SlashCommand("modal", "Show a modal dialog with buttons"),
             SlashCommand("new", "Create a new conversation thread"),
             SlashCommand("profile", "Configure model per agent mode (Code, Plan, Ask)"),
+            SlashCommand("profile2", "Manage and switch runtime LLM profiles"),
             SlashCommand("changes", "Show changed files with expandable diffs"),
         ]
 
