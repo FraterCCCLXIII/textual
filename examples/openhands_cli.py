@@ -598,6 +598,11 @@ class MainShellScreen(Screen):
                                 id="cloud-picker",
                             )
                             yield _CloudFooterLabel("^c", id="cloud-shortcut")
+                            yield Static(id="status-right-spacer")
+                            yield Static(
+                                "ctx N/A  •  $ 0.00  (↑ 0  ↓ 0  cache N/A)",
+                                id="chat-meta-stats",
+                            )
                 with Container(id="board-view"):
                     with Horizontal(id="board-columns"):
                         with Vertical(classes="board-column"):
@@ -1089,7 +1094,9 @@ class MainShellScreen(Screen):
             await chat_view.mount(self._make_bubble(message))
         chat_view.scroll_end(animate=False)
 
-    def _make_bubble(self, message: ChatMessage) -> Markdown:
+    def _make_bubble(self, message: ChatMessage) -> Markdown | Static:
+        if message.role == "system":
+            return Static(message.content, classes="chat-line system", markup=True)
         return Markdown(
             message.content,
             classes=f"chat-line {message.role}",
@@ -1826,6 +1833,30 @@ class OpenHandsCLIApp(App):
     def complete_onboarding(self) -> None:
         self.onboarding_complete = True
         self.conversation_id = str(uuid4())
+        logo = (
+            "[#FFE165]"
+            " ___                    _   _                 _      \n"
+            "/  _ \\ _ __   ___ _ __ | | | | __ _ _ __   __| |___  \n"
+            "| | | | '_ \\ / _ \\ '_ \\| |_| |/ _` | '_ \\ / _` / __| \n"
+            "| |_| | |_) |  __/ | | |  _  | (_| | | | | (_| \\__ \\ \n"
+            "\\___ /| .__/ \\___|_| |_|_| |_|\\__,_|_| |_|\\__,_|___/ \n"
+            "      |_|                                            [/]\n"
+            "OpenHands CLI v1.12.1"
+        )
+        init_text = (
+            "All set up!\n"
+            f"[#FFE165]Initialized conversation[/] [#5aadff]{self.conversation_id}[/]\n"
+            "\n"
+            "[#FFE165]What do you want to build?[/]\n"
+            "1. Ask questions, edit files, or run commands.\n"
+            "2. Use @ to look up a file in the folder structure\n"
+            "3. Type /help for help, /feedback to leave anonymous feedback, or / to scroll through available commands\n"
+            "\n"
+            "[#FFE165]△ Update available: 1.13.0[/]\n"
+            "[#5aadff]Run 'uv tool upgrade openhands' to update[/]"
+        )
+        self.active_thread.messages.insert(0, ChatMessage("system", init_text))
+        self.active_thread.messages.insert(0, ChatMessage("system", logo))
 
     def build_todo_render(self) -> str:
         lines = [
@@ -2081,20 +2112,7 @@ class OpenHandsCLIApp(App):
                 thread_id="thread-onboarding",
                 title="Onboarding Flow",
                 repository="./repos/openhands-cli",
-                messages=[
-                    ChatMessage(
-                        "assistant",
-                        "Welcome. I can help you scaffold a CLI architecture for OpenHands.",
-                    ),
-                    ChatMessage(
-                        "user",
-                        "Start with startup screen, command lookup, and a bottom input pattern.",
-                    ),
-                    ChatMessage(
-                        "assistant",
-                        "Plan ready. I will build reusable screens and mock thread data first.",
-                    ),
-                ],
+                messages=[],
             ),
             "thread-local-repo": ConversationThread(
                 thread_id="thread-local-repo",

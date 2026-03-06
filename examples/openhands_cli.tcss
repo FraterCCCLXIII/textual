@@ -364,7 +364,7 @@ OptionList:focus > .option-list--option-highlighted {
 
 #chat-panel {
     width: 1fr;
-    padding: 0;
+    padding: 0 2;
 }
 
 #fly-view {
@@ -505,11 +505,26 @@ OptionList:focus > .option-list--option-highlighted {
     color: #f2f2f2;
 }
 
+.system {
+    color: #f2f2f2;
+    padding: 0;
+    margin: 0 0 1 0;
+}
+
 #chat-input-row {
     margin: 0;
     border: round #8a8a8a;
     background: transparent !important;
     height: auto;
+}
+
+#status-right-spacer {
+    width: 1fr;
+}
+
+#chat-meta-stats {
+    color: #606060;
+    width: auto;
 }
 
 #chat-input-row:focus-within {
