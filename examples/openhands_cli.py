@@ -510,10 +510,8 @@ class MainShellScreen(Screen):
 
     BINDINGS = [
         Binding("super+c", "screen.copy_text", "Copy", show=False),
-        Binding("ctrl+c", "expand_cloud_picker", "Location", show=False),
         ("ctrl+p", "app.command_palette", "Commands"),
         ("ctrl+l", "toggle_thread_drawer", "Drawer"),
-        ("ctrl+m", "cycle_model", "Model"),
         ("ctrl+n", "new_thread", "New Thread"),
         ("ctrl+r", "cycle_repo_source", "Repo"),
         ("ctrl+s", "toggle_task_output_details", "Details"),
@@ -1203,8 +1201,8 @@ class MainShellScreen(Screen):
             cloud_picker.expanded = False
             self.query_one("#chat-input", Input).focus()
         else:
-            cloud_picker.expanded = True
             cloud_picker.focus()
+            cloud_picker.action_show_overlay()
 
     async def action_cycle_repo_source(self) -> None:
         app = self.app
@@ -1250,6 +1248,10 @@ class MainShellScreen(Screen):
         if event.key in {"ctrl+d", "ctrl+w"}:
             event.stop()
             await self.action_toggle_tips_drawer()
+            return
+        if event.key == "ctrl+c":
+            event.stop()
+            self.action_expand_cloud_picker()
             return
         if event.key == "ctrl+m":
             event.stop()

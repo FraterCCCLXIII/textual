@@ -1,5 +1,9 @@
-Screen {
+App {
     background: #000000;
+}
+
+Screen {
+    background: transparent;
     color: #f2f2f2;
     border: none;
     scrollbar-background: #0b0b0b;
@@ -28,7 +32,7 @@ OptionList,
 }
 
 OptionList {
-    background: #000000;
+    background: transparent;
     color: #f2f2f2;
     border: round #8a8a8a;
 }
@@ -63,7 +67,7 @@ OptionList:focus > .option-list--option-highlighted {
     align: center top;
     layout: vertical;
     padding: 2 4;
-    background: #000000;
+    background: transparent;
 }
 
 #startup-logo {
@@ -82,7 +86,7 @@ OptionList:focus > .option-list--option-highlighted {
     width: auto;
     border: round #8a8a8a;
     color: #f2f2f2;
-    background: #0f0f0f;
+    background: transparent;
     padding: 0 1;
     margin-bottom: 1;
 }
@@ -91,7 +95,7 @@ OptionList:focus > .option-list--option-highlighted {
     width: 96;
     max-width: 95%;
     border: round #8a8a8a;
-    background: #000000;
+    background: transparent;
     color: #d0d0d0;
     padding: 1 2;
     margin-bottom: 1;
@@ -101,7 +105,7 @@ OptionList:focus > .option-list--option-highlighted {
     display: none;
     width: 40;
     border: solid #8a8a8a;
-    background: #000000;
+    background: transparent;
     color: #f2f2f2;
     padding: 1 2;
     margin-bottom: 1;
@@ -126,7 +130,7 @@ OptionList:focus > .option-list--option-highlighted {
 #conversation-tabs {
     dock: top;
     height: 3;
-    background: #000000;
+    background: transparent;
 }
 
 #conversation-tabs Tab {
@@ -155,7 +159,7 @@ OptionList:focus > .option-list--option-highlighted {
     height: auto;
     border-bottom: solid #555555;
     color: #f2f2f2;
-    background: #0a0a0a;
+    background: transparent;
     padding: 0 1;
 }
 
@@ -166,7 +170,7 @@ OptionList:focus > .option-list--option-highlighted {
 #status-footer {
     height: 1;
     width: 1fr;
-    background: #000000;
+    background: transparent;
     color: #f2f2f2;
     padding: 0 1;
     align: left middle;
@@ -325,7 +329,7 @@ OptionList:focus > .option-list--option-highlighted {
 #workspace {
     height: 1fr;
     width: 1fr;
-    padding: 0 1;
+    padding: 0;
 }
 
 #workspace-columns {
@@ -338,13 +342,13 @@ OptionList:focus > .option-list--option-highlighted {
     min-width: 24;
     max-width: 38;
     border-right: solid #555555;
-    background: #000000;
+    background: transparent;
     padding: 0 2 0 0;
 }
 
 #chat-panel {
     width: 1fr;
-    padding: 0 0 0 1;
+    padding: 0;
 }
 
 #fly-view {
@@ -353,7 +357,7 @@ OptionList:focus > .option-list--option-highlighted {
     height: 1fr;
     margin: 0;
     border: round #8a8a8a;
-    background: #000000;
+    background: transparent;
     color: #d6d6d6;
     padding: 0;
 }
@@ -382,7 +386,7 @@ OptionList:focus > .option-list--option-highlighted {
     width: 1fr;
     height: 1fr;
     border: round #7a7a7a;
-    background: #050505;
+    background: transparent;
     margin-right: 1;
 }
 
@@ -398,7 +402,7 @@ OptionList:focus > .option-list--option-highlighted {
 .board-list {
     height: 1fr;
     border: none;
-    background: #050505;
+    background: transparent;
     color: #f2f2f2;
     padding: 0;
 }
@@ -418,7 +422,7 @@ OptionList:focus > .option-list--option-highlighted {
 #threads {
     height: 1fr;
     border: none;
-    background: #000000;
+    background: transparent;
 }
 
 #threads > .option-list--option {
@@ -463,7 +467,7 @@ OptionList:focus > .option-list--option-highlighted {
 #chat-view {
     height: 1fr;
     border: none;
-    background: #000000;
+    background: transparent;
     padding: 0;
 }
 
@@ -481,20 +485,20 @@ OptionList:focus > .option-list--option-highlighted {
 }
 
 #chat-input-row {
-    margin: 0 1 0 1;
+    margin: 0;
     border: round #8a8a8a;
-    background: #000000;
+    background: transparent !important;
     height: auto;
 }
 
 #chat-input-row:focus-within {
     border: round #c8c8c8;
-    background: #050505;
+    background: transparent !important;
 }
 
 #chat-input-row:hover {
     border: round #a0a0a0;
-    background: #050505;
+    background: transparent !important;
 }
 
 #chat-input-prefix {
@@ -507,7 +511,7 @@ OptionList:focus > .option-list--option-highlighted {
 
 #chat-input {
     border: none !important;
-    background: transparent;
+    background: transparent !important;
     color: #f2f2f2;
     padding: 0 1;
     width: 1fr;
@@ -516,15 +520,15 @@ OptionList:focus > .option-list--option-highlighted {
 
 #chat-input:focus {
     border: none !important;
-    background: transparent;
+    background: transparent !important;
     color: white;
 }
 
 #tips-drawer {
     display: none;
-    margin: 0 1;
+    margin: 0;
     border: round #8a8a8a;
-    background: #000000;
+    background: transparent;
     color: #f2f2f2;
     padding: 0 1;
 }
@@ -535,10 +539,10 @@ OptionList:focus > .option-list--option-highlighted {
 
 #approval-title {
     display: none;
-    margin: 0 1;
+    margin: 0;
     border: round #8a8a8a;
     border-bottom: none;
-    background: #000000;
+    background: transparent;
     color: #f2f2f2;
     padding: 0 1;
     text-style: bold;
@@ -550,9 +554,9 @@ OptionList:focus > .option-list--option-highlighted {
 
 #approval-options {
     display: none;
-    margin: 0 1;
+    margin: 0;
     border: round #8a8a8a;
-    background: #000000;
+    background: transparent;
     color: #f2f2f2;
     padding: 0;
 }
@@ -569,9 +573,9 @@ OptionList:focus > .option-list--option-highlighted {
 
 #slash-menu {
     display: none;
-    margin: 0 1;
+    margin: 0;
     border: round #8a8a8a;
-    background: #000000;
+    background: transparent;
     color: #f2f2f2;
     padding: 0 1;
     text-style: bold;
@@ -583,10 +587,10 @@ OptionList:focus > .option-list--option-highlighted {
 
 #slash-submenu-title {
     display: none;
-    margin: 0 1;
+    margin: 0;
     border: round #8a8a8a;
     border-bottom: none;
-    background: #000000;
+    background: transparent;
     color: #f2f2f2;
     padding: 0 1;
     text-style: bold;
@@ -598,9 +602,9 @@ OptionList:focus > .option-list--option-highlighted {
 
 #slash-submenu {
     display: none;
-    margin: 0 1 1 1;
+    margin: 0 0 1 0;
     border: round #8a8a8a;
-    background: #000000;
+    background: transparent;
     color: #f2f2f2;
     padding: 0;
 }
@@ -610,7 +614,7 @@ OptionList:focus > .option-list--option-highlighted {
 }
 
 Footer {
-    background: #000000;
+    background: transparent;
 }
 
 /* Modal dialog shown via /modal command */
