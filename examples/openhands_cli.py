@@ -95,6 +95,15 @@ class ModelPickerSelect(Select[str]):
             compact=Select.compact
         )
 
+    def _on_mouse_down(self, event: events.MouseDown) -> None:
+        """Backup: if the SelectCurrent toggle mechanism doesn't fire, open from mouse-down."""
+        if not self.expanded:
+            def _open_if_still_closed() -> None:
+                if not self.expanded:
+                    self.focus()
+                    self.action_show_overlay()
+            self.call_after_refresh(_open_if_still_closed)
+
 
 class CloudPickerOverlay(CheckmarkSelectOverlay):
     """CheckmarkSelectOverlay that also renders the separator row as border T-junctions
@@ -155,6 +164,15 @@ class CloudPickerSelect(Select[str]):
         yield CloudPickerOverlay(type_to_search=self._type_to_search).data_bind(
             compact=Select.compact
         )
+
+    def _on_mouse_down(self, event: events.MouseDown) -> None:
+        """Backup: if the SelectCurrent toggle mechanism doesn't fire, open from mouse-down."""
+        if not self.expanded:
+            def _open_if_still_closed() -> None:
+                if not self.expanded:
+                    self.focus()
+                    self.action_show_overlay()
+            self.call_after_refresh(_open_if_still_closed)
 
 
 class ConversationTabs(Tabs):
@@ -505,6 +523,24 @@ class OnboardingScreen(Screen):
         return "\n".join(lines)
 
 
+class _ModelFooterLabel(Static):
+    """Status-footer label that opens the model picker when clicked."""
+
+    async def on_click(self) -> None:
+        screen = self.screen
+        if hasattr(screen, "action_cycle_model"):
+            await screen.action_cycle_model()
+
+
+class _CloudFooterLabel(Static):
+    """Status-footer label that opens the cloud picker when clicked."""
+
+    def on_click(self) -> None:
+        screen = self.screen
+        if hasattr(screen, "action_expand_cloud_picker"):
+            screen.action_expand_cloud_picker()
+
+
 class MainShellScreen(Screen):
     """Main shell with thread list, conversation view, and bottom input."""
 
@@ -538,8 +574,8 @@ class MainShellScreen(Screen):
                             )
                         with Horizontal(id="status-footer"):
                             yield Static(id="status-left")
-                            yield Static("✦", id="model-icon")
-                            yield Static("Model:", id="model-label")
+                            yield _ModelFooterLabel("✦", id="model-icon")
+                            yield _ModelFooterLabel("Model:", id="model-label")
                             yield ModelPickerSelect(
                                 (
                                     (model, model)
@@ -550,7 +586,7 @@ class MainShellScreen(Screen):
                                 compact=True,
                                 id="model-picker",
                             )
-                            yield Static("^m     ⛁", id="model-shortcut")
+                            yield _ModelFooterLabel("^m     ⛁", id="model-shortcut")
                             yield CloudPickerSelect(
                                 (
                                     (" Local", "local"),
@@ -561,7 +597,7 @@ class MainShellScreen(Screen):
                                 compact=True,
                                 id="cloud-picker",
                             )
-                            yield Static("^c", id="cloud-shortcut")
+                            yield _CloudFooterLabel("^c", id="cloud-shortcut")
                 with Container(id="board-view"):
                     with Horizontal(id="board-columns"):
                         with Vertical(classes="board-column"):
@@ -1790,14 +1826,6 @@ class OpenHandsCLIApp(App):
     def complete_onboarding(self) -> None:
         self.onboarding_complete = True
         self.conversation_id = str(uuid4())
-        self.active_thread.messages.insert(
-            0,
-            ChatMessage(
-                "assistant",
-                f"Initialized conversation `{self.conversation_id}`.\n"
-                f"Provider: **{self.provider_choice or 'OpenHands'}**.",
-            ),
-        )
 
     def build_todo_render(self) -> str:
         lines = [
@@ -1900,13 +1928,12 @@ class OpenHandsCLIApp(App):
         return self.set_repo_source(target)
 
     def set_repo_source(self, source: str) -> bool:
+        """Set the repo source. Returns True on success, False if cloud is not connected."""
         if source == "cloud" and not self.cloud_connected:
             self.repo_source_index = 0
             return False
-        source_index = 0 if source == "local" else 1
-        changed = self.repo_source_index != source_index
-        self.repo_source_index = source_index
-        return changed
+        self.repo_source_index = 0 if source == "local" else 1
+        return True
 
     def cycle_model(self) -> None:
         self.model_index = (self.model_index + 1) % len(self.models)

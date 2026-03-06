@@ -187,10 +187,18 @@ OptionList:focus > .option-list--option-highlighted {
     margin-right: 1;
 }
 
+#model-icon:hover {
+    color: #c0c0c0;
+}
+
 #model-label {
     width: auto;
     color: #f2f2f2;
     margin-right: 0;
+}
+
+#model-label:hover {
+    color: #ffffff;
 }
 
 #model-shortcut {
@@ -200,10 +208,18 @@ OptionList:focus > .option-list--option-highlighted {
     margin-right: 0;
 }
 
+#model-shortcut:hover {
+    color: #c0c0c0;
+}
+
 #cloud-shortcut {
     width: auto;
     color: #8a8a8a;
     margin-left: 1;
+}
+
+#cloud-shortcut:hover {
+    color: #c0c0c0;
 }
 
 #cloud-label {
@@ -474,6 +490,11 @@ OptionList:focus > .option-list--option-highlighted {
 .chat-line {
     margin: 0;
     padding: 0;
+}
+
+.chat-line MarkdownBlock > .code_inline {
+    background: #0d2a4a;
+    color: #5aadff;
 }
 
 .assistant {
