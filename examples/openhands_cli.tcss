@@ -176,17 +176,29 @@ OptionList:focus > .option-list--option-highlighted {
     color: #f2f2f2;
 }
 
+#model-icon {
+    width: auto;
+    color: #8a8a8a;
+    margin-right: 1;
+}
+
 #model-label {
     width: auto;
     color: #f2f2f2;
-    text-style: bold;
     margin-right: 0;
 }
 
 #model-shortcut {
     width: auto;
     color: #8a8a8a;
+    margin-left: 1;
     margin-right: 0;
+}
+
+#cloud-shortcut {
+    width: auto;
+    color: #8a8a8a;
+    margin-left: 1;
 }
 
 #cloud-label {
@@ -201,7 +213,7 @@ OptionList:focus > .option-list--option-highlighted {
     border: none;
     background: transparent;
     color: #f2f2f2;
-    margin-left: 1;
+    margin-left: 0;
     height: 1;
 }
 
@@ -222,6 +234,7 @@ OptionList:focus > .option-list--option-highlighted {
 #cloud-picker > SelectCurrent .arrow {
     width: auto;
     padding: 0 0 0 1;
+    color: #8a8a8a;
 }
 
 #cloud-picker > SelectOverlay {
@@ -255,7 +268,6 @@ OptionList:focus > .option-list--option-highlighted {
     border: none;
     background: transparent;
     color: #f2f2f2;
-    text-style: bold;
     margin: 0;
     height: 1;
 }
@@ -277,6 +289,7 @@ OptionList:focus > .option-list--option-highlighted {
 #model-picker > SelectCurrent .arrow {
     width: auto;
     padding: 0 0 0 1;
+    color: #8a8a8a;
 }
 
 #model-picker > SelectOverlay {
@@ -667,4 +680,62 @@ CloudConnectModalScreen {
 #cloud-connect-cancel:hover,
 #cloud-connect-cancel:focus {
     background: transparent !important;
+}
+
+CloudDisconnectConfirmScreen {
+    align: center middle;
+}
+
+#cloud-disconnect-modal {
+    width: 44;
+    height: auto;
+    border: round #8a8a8a;
+    padding: 1 2;
+}
+
+#cloud-disconnect-title {
+    width: 1fr;
+    text-style: bold;
+    content-align: center middle;
+    padding: 1 0;
+}
+
+#cloud-disconnect-body {
+    width: 1fr;
+    content-align: center middle;
+    color: #a0a0a0;
+    padding: 0 0 1 0;
+}
+
+#cloud-disconnect-buttons {
+    width: 1fr;
+    height: auto;
+    align: center middle;
+    margin-top: 1;
+}
+
+#cloud-disconnect-confirm {
+    width: 16;
+    border: round #c04040;
+    background: transparent !important;
+    color: #e06060;
+    margin-right: 1;
+}
+
+#cloud-disconnect-confirm:hover,
+#cloud-disconnect-confirm:focus {
+    background: #2a1010 !important;
+    color: #ff8080;
+}
+
+#cloud-disconnect-cancel {
+    width: 12;
+    border: round #8a8a8a;
+    background: transparent !important;
+    color: #f2f2f2;
+}
+
+#cloud-disconnect-cancel:hover,
+#cloud-disconnect-cancel:focus {
+    background: #1a1a1a !important;
 }

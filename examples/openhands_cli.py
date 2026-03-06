@@ -22,47 +22,127 @@ from textual.widgets import Button, Footer, Input, Label, Markdown, OptionList, 
 from textual.widgets._select import SelectCurrent, SelectOverlay
 from textual.widgets.option_list import Option
 from rich.segment import Segment
+from rich.style import Style as RichStyle
 
 
-class CloudPickerOverlay(SelectOverlay):
-    """SelectOverlay that renders the separator row as true border T-junctions (├ / ┤)."""
+class CheckmarkSelectOverlay(SelectOverlay):
+    """SelectOverlay base that renders a right-aligned ✓ on the active option row.
+
+    The checkmark is injected into the rendered strip so the label stored in
+    Select._options (and displayed by SelectCurrent) stays clean.
+    """
+
+    _CHECK_CHAR = "✓"
+    _CHECK_COLOR = "#5faf5f"
+
+    def _selected_option_index(self) -> int | None:
+        """Return the OptionList index matching the parent Select's current value."""
+        parent = self.parent
+        if parent is None or not hasattr(parent, "_options") or not hasattr(parent, "value"):
+            return None
+        value = parent.value
+        if value is Select.BLANK:
+            return None
+        for idx, (_, opt_value) in enumerate(parent._options):
+            if opt_value == value:
+                return idx
+        return None
+
+    def _inject_check(self, strip: Strip) -> Strip:
+        """Replace the last content cell of *strip* with the checkmark character."""
+        width = strip.cell_length
+        if width < 3:
+            return strip
+        left_part = list(strip.crop(0, width - 2))
+        right_border = list(strip)[-1]
+        base_style = left_part[-1].style if left_part else RichStyle.null()
+        check_seg = Segment(
+            self._CHECK_CHAR,
+            (base_style or RichStyle.null()) + RichStyle(color=self._CHECK_COLOR),
+        )
+        return Strip(left_part + [check_seg, right_border], width)
+
+    def _option_widget_y(self, option_index: int, crop: Region) -> int | None:
+        """Convert an option index to a crop-relative y coordinate, or None."""
+        try:
+            content_y = self._index_to_line[option_index] - self.scroll_offset.y
+        except KeyError:
+            return None
+        local_y = content_y + self.styles.gutter.top - crop.y
+        return local_y if 0 <= local_y < crop.height else None
 
     def render_lines(self, crop: Region) -> list[Strip]:
         self._update_lines()
         strips = super().render_lines(crop)
+        sel_idx = self._selected_option_index()
+        if sel_idx is not None:
+            local_y = self._option_widget_y(sel_idx, crop)
+            if local_y is not None:
+                strips[local_y] = self._inject_check(strips[local_y])
+        return strips
 
-        # Find the separator option — its prompt is a string of ─ chars
-        sep_index = None
+
+class ModelPickerOverlay(CheckmarkSelectOverlay):
+    """Overlay for the model picker — adds the active-option checkmark."""
+
+
+class ModelPickerSelect(Select[str]):
+    """Select widget that uses ModelPickerOverlay."""
+
+    def compose(self) -> ComposeResult:
+        yield SelectCurrent(self.prompt)
+        yield ModelPickerOverlay(type_to_search=self._type_to_search).data_bind(
+            compact=Select.compact
+        )
+
+
+class CloudPickerOverlay(CheckmarkSelectOverlay):
+    """CheckmarkSelectOverlay that also renders the separator row as border T-junctions
+    (├ / ┤) and skips the separator on arrow-key navigation."""
+
+    def _sep_index(self) -> int | None:
+        """Return the index of the separator option, or None if absent."""
         for i, option in enumerate(self.options):
             prompt = option.prompt
             if isinstance(prompt, str) and prompt.startswith("─"):
-                sep_index = i
-                break
+                return i
+        return None
 
+    def action_cursor_down(self) -> None:
+        super().action_cursor_down()
+        if self.highlighted == self._sep_index():
+            super().action_cursor_down()
+
+    def action_cursor_up(self) -> None:
+        super().action_cursor_up()
+        if self.highlighted == self._sep_index():
+            super().action_cursor_up()
+
+    def render_lines(self, crop: Region) -> list[Strip]:
+        # super() runs CheckmarkSelectOverlay.render_lines which handles ✓ injection
+        strips = super().render_lines(crop)
+
+        sep_index = self._sep_index()
         if sep_index is None:
             return strips
 
-        # Map separator option content-y → widget-y
-        try:
-            content_y = self._index_to_line[sep_index] - self.scroll_offset.y
-        except KeyError:
+        local_y = self._option_widget_y(sep_index, crop)
+        if local_y is None:
             return strips
 
-        widget_y = content_y + self.styles.gutter.top
-        local_y = widget_y - crop.y
-        if not (0 <= local_y < len(strips)):
-            return strips
-
-        # Swap the left │ → ├ and right │ → ┤ on the separator row
+        # Swap │ → ├ / ┤ and unify border color across the entire separator row.
         segments = list(strips[local_y])
         if len(segments) >= 2:
-            left_seg = segments[0]
-            right_seg = segments[-1]
-            if left_seg.text == "│":
-                segments[0] = Segment("├", left_seg.style)
-            if right_seg.text == "│":
-                segments[-1] = Segment("┤", right_seg.style)
-            strips[local_y] = Strip(segments, strips[local_y].cell_length)
+            border_style = segments[0].style
+            new_segments: list[Segment] = []
+            for idx, seg in enumerate(segments):
+                if idx == 0:
+                    new_segments.append(Segment("├" if seg.text == "│" else seg.text, border_style))
+                elif idx == len(segments) - 1:
+                    new_segments.append(Segment("┤" if seg.text == "│" else seg.text, border_style))
+                else:
+                    new_segments.append(Segment(seg.text, border_style))
+            strips[local_y] = Strip(new_segments, strips[local_y].cell_length)
 
         return strips
 
@@ -181,6 +261,31 @@ class CloudConnectModalScreen(ModalScreen[None]):
         app.cloud_connected = True
         self.notify("Cloud authentication confirmed.")
         self.dismiss()
+
+
+class CloudDisconnectConfirmScreen(ModalScreen[bool]):
+    """Confirmation dialog before disconnecting from OpenHands Cloud."""
+
+    BINDINGS = [("escape", "cancel", "Cancel")]
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="cloud-disconnect-modal"):
+            yield Static("Disconnect from Cloud?", id="cloud-disconnect-title")
+            yield Static(
+                "This will switch your repository source back to Local.",
+                id="cloud-disconnect-body",
+            )
+            with Horizontal(id="cloud-disconnect-buttons"):
+                yield Button("Disconnect", id="cloud-disconnect-confirm", variant="error")
+                yield Button("Cancel", id="cloud-disconnect-cancel")
+
+    @on(Button.Pressed, "#cloud-disconnect-confirm")
+    def on_confirm(self) -> None:
+        self.dismiss(True)
+
+    @on(Button.Pressed, "#cloud-disconnect-cancel")
+    def action_cancel(self) -> None:
+        self.dismiss(False)
 
 
 class OpenHandsCommandProvider(Provider):
@@ -404,9 +509,11 @@ class MainShellScreen(Screen):
     """Main shell with thread list, conversation view, and bottom input."""
 
     BINDINGS = [
-        Binding("ctrl+c,super+c", "screen.copy_text", "Copy", show=False),
+        Binding("super+c", "screen.copy_text", "Copy", show=False),
+        Binding("ctrl+c", "expand_cloud_picker", "Location", show=False),
         ("ctrl+p", "app.command_palette", "Commands"),
         ("ctrl+l", "toggle_thread_drawer", "Drawer"),
+        ("ctrl+m", "cycle_model", "Model"),
         ("ctrl+n", "new_thread", "New Thread"),
         ("ctrl+r", "cycle_repo_source", "Repo"),
         ("ctrl+s", "toggle_task_output_details", "Details"),
@@ -431,8 +538,9 @@ class MainShellScreen(Screen):
                         )
                         with Horizontal(id="status-footer"):
                             yield Static(id="status-left")
-                            yield Static("✦ Model:", id="model-label")
-                            yield Select(
+                            yield Static("✦", id="model-icon")
+                            yield Static("Model:", id="model-label")
+                            yield ModelPickerSelect(
                                 (
                                     (model, model)
                                     for model in OpenHandsCLIApp.DEFAULT_MODELS
@@ -453,7 +561,7 @@ class MainShellScreen(Screen):
                                 compact=True,
                                 id="cloud-picker",
                             )
-                        yield Footer()
+                            yield Static("^c", id="cloud-shortcut")
                 with Container(id="board-view"):
                     with Horizontal(id="board-columns"):
                         with Vertical(classes="board-column"):
@@ -495,6 +603,7 @@ class MainShellScreen(Screen):
         self.code_city_timer = None
         self.code_city_towers = self._build_code_city_towers()
         self.board_task_to_thread: dict[str, str] = {}
+        self._updating_cloud_picker = False
         self.code_city_loop_length = max(
             (tower["z"] + tower["depth"] for tower in self.code_city_towers),
             default=240.0,
@@ -579,8 +688,12 @@ class MainShellScreen(Screen):
         model_picker.set_options((model, model) for model in app.models)
         model_picker.value = app.model_name
         cloud_picker = self.query_one("#cloud-picker", Select)
-        cloud_picker.set_options((label, value) for label, value in app.cloud_picker_options)
-        cloud_picker.value = "cloud" if app.repo_source == "cloud" else "local"
+        self._updating_cloud_picker = True
+        try:
+            cloud_picker.set_options((label, value) for label, value in app.cloud_picker_options)
+            cloud_picker.value = "cloud" if app.repo_source == "cloud" else "local"
+        finally:
+            self._updating_cloud_picker = False
 
     def _render_tips_drawer(self) -> None:
         drawer = self.query_one("#tips-drawer", Static)
@@ -1082,6 +1195,15 @@ class MainShellScreen(Screen):
         await self.sync_from_app_state()
         self.notify("Created a new mock conversation thread.")
 
+    def action_expand_cloud_picker(self) -> None:
+        cloud_picker = self.query_one("#cloud-picker", Select)
+        if cloud_picker.expanded:
+            cloud_picker.expanded = False
+            self.query_one("#chat-input", Input).focus()
+        else:
+            cloud_picker.expanded = True
+            cloud_picker.focus()
+
     async def action_cycle_repo_source(self) -> None:
         app = self.app
         assert isinstance(app, OpenHandsCLIApp)
@@ -1114,12 +1236,12 @@ class MainShellScreen(Screen):
     async def on_key(self, event: events.Key) -> None:
         chat_input = self.query_one("#chat-input", Input)
         # Some terminals/input states can intercept Ctrl bindings; keep a direct fallback.
-        if event.key in {"ctrl+c", "super+c"}:
+        if event.key == "super+c":
             event.stop()
             try:
                 self.action_copy_text()
             except SkipAction:
-                self.notify("Select text first, then press Ctrl/Cmd+C.")
+                self.notify("Select text first, then press Cmd+C.")
             else:
                 self.notify("Copied selected text.")
             return
@@ -1127,7 +1249,7 @@ class MainShellScreen(Screen):
             event.stop()
             await self.action_toggle_tips_drawer()
             return
-        if event.key == "ctrl+m" and chat_input.has_focus:
+        if event.key == "ctrl+m":
             event.stop()
             await self.action_cycle_model()
             return
@@ -1204,7 +1326,7 @@ class MainShellScreen(Screen):
 
     @on(Select.Changed, "#cloud-picker")
     async def on_cloud_picker_changed(self, event: Select.Changed[str]) -> None:
-        if event.value is Select.BLANK:
+        if event.value is Select.BLANK or self._updating_cloud_picker:
             return
         app = self.app
         assert isinstance(app, OpenHandsCLIApp)
@@ -1218,10 +1340,17 @@ class MainShellScreen(Screen):
             cloud_picker.value = "cloud" if app.repo_source == "cloud" else "local"
             return
         if value == "disconnect_cloud":
-            app.cloud_connected = False
-            app.set_repo_source("local")
-            await self.sync_from_app_state(include_tabs=False)
-            self.notify("Disconnected from Cloud.")
+            cloud_picker.value = "cloud"
+
+            async def _on_disconnect_confirmed(confirmed: bool) -> None:
+                if not confirmed:
+                    return
+                app.cloud_connected = False
+                app.set_repo_source("local")
+                await self.sync_from_app_state(include_tabs=False)
+                self.notify("Disconnected from Cloud.")
+
+            self.app.push_screen(CloudDisconnectConfirmScreen(), _on_disconnect_confirmed)
             return
         if value == "cloud":
             if not app.set_repo_source("cloud"):
@@ -1589,12 +1718,12 @@ class OpenHandsCLIApp(App):
     def cloud_picker_options(self) -> list[tuple[str, str]]:
         if self.cloud_connected:
             return [
-                (" Local", "local"),
-                (" Cloud", "cloud"),
+                ("Local", "local"),
+                ("Cloud", "cloud"),
                 ("─" * 40, "separator"),
-                (" Disconnect Cloud", "disconnect_cloud"),
+                ("Disconnect Cloud", "disconnect_cloud"),
             ]
-        return [(" Local", "local"), (" Connect to Cloud", "connect_cloud")]
+        return [("Local", "local"), ("Connect to Cloud", "connect_cloud")]
 
     @property
     def model_name(self) -> str:
