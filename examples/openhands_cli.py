@@ -532,10 +532,12 @@ class MainShellScreen(Screen):
                     with Vertical(id="chat-panel"):
                         with VerticalScroll(id="chat-view"):
                             pass
-                        yield Input(
-                            placeholder="Type a request (or @path/to/file), then press Enter",
-                            id="chat-input",
-                        )
+                        with Horizontal(id="chat-input-row"):
+                            yield Static(">", id="chat-input-prefix")
+                            yield Input(
+                                placeholder="Type a request or / to access command menu",
+                                id="chat-input",
+                            )
                         with Horizontal(id="status-footer"):
                             yield Static(id="status-left")
                             yield Static("✦", id="model-icon")

@@ -480,21 +480,43 @@ OptionList:focus > .option-list--option-highlighted {
     color: #f2f2f2;
 }
 
-#chat-input {
+#chat-input-row {
     margin: 0 1 0 1;
     border: round #8a8a8a;
     background: #000000;
-    color: #f2f2f2;
+    height: auto;
 }
 
-#chat-input:hover {
+#chat-input-row:focus-within {
+    border: round #c8c8c8;
+    background: #050505;
+}
+
+#chat-input-row:hover {
     border: round #a0a0a0;
     background: #050505;
 }
 
+#chat-input-prefix {
+    width: auto;
+    color: #8a8a8a;
+    padding: 0 0 0 1;
+    height: 1;
+    content-align: left middle;
+}
+
+#chat-input {
+    border: none !important;
+    background: transparent;
+    color: #f2f2f2;
+    padding: 0 1;
+    width: 1fr;
+    height: 1;
+}
+
 #chat-input:focus {
-    border: round #c8c8c8;
-    background: #050505;
+    border: none !important;
+    background: transparent;
     color: white;
 }
 
