@@ -19,6 +19,7 @@ VerticalScroll,
 OptionList,
 #threads,
 #chat-view,
+#changes-scroll,
 #slash-menu,
 #slash-submenu,
 #approval-options {
@@ -653,6 +654,11 @@ Footer {
     background: transparent;
 }
 
+/* Dark backdrop for all modal screens */
+ModalScreen {
+    background: rgba(0, 0, 0, 0.75);
+}
+
 /* Modal dialog shown via /modal command */
 ModalDialogScreen {
     align: center middle;
@@ -801,4 +807,218 @@ CloudDisconnectConfirmScreen {
 #cloud-disconnect-cancel:hover,
 #cloud-disconnect-cancel:focus {
     background: #1a1a1a !important;
+}
+
+/* LLM Profile modal */
+LLMProfileModalScreen {
+    align: center middle;
+}
+
+#profile-modal {
+    width: 58;
+    height: auto;
+    border: round #8a8a8a;
+    padding: 1 2;
+}
+
+#profile-modal-title {
+    width: 1fr;
+    text-style: bold;
+    content-align: center middle;
+    padding: 1 0 0 0;
+}
+
+#profile-modal-subtitle {
+    width: 1fr;
+    content-align: center middle;
+    color: #a0a0a0;
+    padding: 0 0 1 0;
+}
+
+#profile-rows {
+    width: 1fr;
+    height: auto;
+    margin: 1 0;
+}
+
+.profile-row {
+    height: 3;
+    width: 1fr;
+    align: left middle;
+    margin-bottom: 1;
+}
+
+.profile-mode-label {
+    width: 8;
+    color: #f2f2f2;
+    content-align: left middle;
+    height: 1;
+}
+
+.profile-row Select {
+    width: 1fr;
+}
+
+#profile-buttons {
+    width: 1fr;
+    height: auto;
+    align: center middle;
+    margin-top: 1;
+}
+
+#profile-save {
+    width: 12;
+    border: round #5a8a5a;
+    background: transparent !important;
+    color: #80c080;
+    margin-right: 1;
+}
+
+#profile-save:hover,
+#profile-save:focus {
+    background: #0f2a0f !important;
+    color: #a0e0a0;
+}
+
+#profile-cancel {
+    width: 12;
+    border: round #8a8a8a;
+    background: transparent !important;
+    color: #f2f2f2;
+}
+
+#profile-cancel:hover,
+#profile-cancel:focus {
+    background: #1a1a1a !important;
+}
+
+/* Changes panel — replaces chat-view when /changes is active */
+#changes-panel {
+    display: none;
+    width: 1fr;
+    height: 1fr;
+    border: round #8a8a8a;
+    background: transparent;
+}
+
+#changes-panel.-visible {
+    display: block;
+}
+
+#changes-header {
+    height: auto;
+    width: 1fr;
+    background: transparent;
+    padding: 0 2;
+    align: left middle;
+    border-bottom: solid #3a3a3a;
+}
+
+#changes-title {
+    width: 1fr;
+    color: #c0c0c0;
+    text-style: bold;
+    content-align: left middle;
+    height: auto;
+    padding: 1 0;
+}
+
+#changes-close {
+    width: auto;
+    border: round #555555;
+    background: transparent !important;
+    color: #8a8a8a;
+    padding: 0 2;
+}
+
+#changes-close:hover {
+    background: transparent !important;
+    color: #f2f2f2;
+    border: round #a0a0a0;
+}
+
+#changes-close:focus {
+    background: transparent !important;
+    border: round #a0a0a0;
+}
+
+#changes-scroll {
+    width: 1fr;
+    height: 1fr;
+    background: transparent;
+    border: none;
+    padding: 0;
+}
+
+ChangedFileItem {
+    width: 1fr;
+    height: auto;
+    border-bottom: solid #2a2a2a;
+    background: transparent;
+    padding: 0;
+}
+
+ChangedFileItem:hover {
+    background: #141414;
+}
+
+ChangedFileItem:focus {
+    background: #1a1a1a;
+}
+
+.diff-header-line {
+    width: 1fr;
+    height: auto;
+    padding: 0 2;
+    background: transparent;
+}
+
+.diff-columns {
+    display: none;
+    width: 1fr;
+    height: auto;
+}
+
+.diff-columns.-visible {
+    display: block;
+}
+
+/* Panes are now Vertical containers — no padding, lines handle their own spacing */
+.diff-left-pane {
+    width: 1fr;
+    height: auto;
+    padding: 0;
+    border-right: solid #282828;
+    background: transparent;
+}
+
+.diff-right-pane {
+    width: 1fr;
+    height: auto;
+    padding: 0;
+    background: transparent;
+}
+
+/* One Static per diff row: height:1 fills full column width with the row background */
+.diff-line {
+    height: 1;
+    width: 1fr;
+    padding: 0 1;
+    background: transparent;
+}
+
+.diff-removed {
+    background: #321616;
+}
+
+.diff-added {
+    background: #163216;
+}
+
+.diff-hunk {
+    background: #182438;
+}
+
+.diff-filler {
+    background: transparent;
 }

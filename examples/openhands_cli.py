@@ -236,6 +236,201 @@ class TodoItem:
     reason: str = ""
 
 
+@dataclass
+class ChangedFile:
+    path: str
+    additions: int
+    deletions: int
+    diff_lines: list[str] = field(default_factory=list)
+
+
+class ChangedFileItem(Vertical):
+    """Collapsible file diff item with side-by-side column view."""
+
+    can_focus = True
+
+    BINDINGS = [
+        ("enter", "toggle_diff", "Toggle diff"),
+        ("space", "toggle_diff", "Toggle diff"),
+    ]
+
+    def __init__(self, changed_file: ChangedFile) -> None:
+        super().__init__()
+        self._file = changed_file
+        self._expanded = False
+        self._left_lines: list[tuple[int | None, str, bool, bool]] = []
+        self._right_lines: list[tuple[int | None, str, bool, bool]] = []
+
+    def compose(self) -> ComposeResult:
+        yield Static("", classes="diff-header-line")
+        with Horizontal(classes="diff-columns"):
+            yield Vertical(classes="diff-left-pane")
+            yield Vertical(classes="diff-right-pane")
+
+    def on_mount(self) -> None:
+        self._left_lines, self._right_lines = self._parse_to_side_by_side()
+        self.query_one(".diff-header-line", Static).update(self._build_header_text())
+
+    def _build_header_text(self) -> Text:
+        icon = "▼" if self._expanded else "▶"
+        text = Text()
+        text.append(f"{icon} ", style="bold #707070")
+        text.append(self._file.path, style="bold #f2f2f2")
+        text.append("  ")
+        text.append(f"+{self._file.additions}", style="#5faf5f")
+        text.append("  ")
+        text.append(f"-{self._file.deletions}", style="#c04040")
+        return text
+
+    def _make_diff_line(
+        self,
+        line_num: int | None,
+        content: str,
+        is_changed: bool,
+        is_hunk: bool,
+        is_removed: bool,
+    ) -> Static:
+        """Build a single-row Static for one diff line.
+
+        Using height:1 Static widgets (one per line) gives each row a full-width
+        background via CSS and makes content wrapping physically impossible.
+        """
+        text = Text(no_wrap=True)
+
+        if is_hunk:
+            text.append(f"  {content}", style="bold #5aadff")
+            return Static(text, classes="diff-line diff-hunk")
+
+        # 5-char gutter: right-aligned number + space, or blank filler
+        num_str = f"{line_num:>4} " if line_num is not None else "     "
+        sep = "│ "
+
+        if is_changed and is_removed:
+            text.append(num_str, style="#8a5050")
+            text.append(sep, style="#5a3030")
+            text.append(content, style="#d4b8b8")
+            return Static(text, classes="diff-line diff-removed")
+
+        if is_changed:
+            text.append(num_str, style="#508a50")
+            text.append(sep, style="#305a30")
+            text.append(content, style="#b8d4b8")
+            return Static(text, classes="diff-line diff-added")
+
+        if line_num is None:
+            # Padding row — one side had fewer changed lines than the other
+            return Static("", classes="diff-line diff-filler")
+
+        text.append(num_str, style="#484848")
+        text.append(sep, style="#343434")
+        text.append(content, style="#b8b8b8")
+        return Static(text, classes="diff-line diff-context")
+
+    async def _render_columns(self) -> None:
+        left_pane = self.query_one(".diff-left-pane", Vertical)
+        right_pane = self.query_one(".diff-right-pane", Vertical)
+        await left_pane.remove_children()
+        await right_pane.remove_children()
+        for entry in self._left_lines:
+            await left_pane.mount(self._make_diff_line(*entry, is_removed=True))
+        for entry in self._right_lines:
+            await right_pane.mount(self._make_diff_line(*entry, is_removed=False))
+
+    async def action_toggle_diff(self) -> None:
+        self._expanded = not self._expanded
+        self.query_one(".diff-header-line", Static).update(self._build_header_text())
+        diff_cols = self.query_one(".diff-columns", Horizontal)
+        if self._expanded:
+            diff_cols.add_class("-visible")
+            left_pane = self.query_one(".diff-left-pane", Vertical)
+            if not left_pane.children:
+                await self._render_columns()
+        else:
+            diff_cols.remove_class("-visible")
+
+    async def on_click(self, event: events.Click) -> None:
+        self.focus()
+        await self.action_toggle_diff()
+
+    def _parse_to_side_by_side(
+        self,
+    ) -> tuple[
+        list[tuple[int | None, str, bool, bool]],
+        list[tuple[int | None, str, bool, bool]],
+    ]:
+        """Convert unified diff into aligned (line_num, content, is_changed, is_hunk) pairs."""
+        skip_headers = {"---", "+++"}
+        lines = [
+            l for l in self._file.diff_lines
+            if not any(l.startswith(p) for p in skip_headers)
+        ]
+
+        left_num = 1
+        right_num = 1
+        left_result: list[tuple[int | None, str, bool, bool]] = []
+        right_result: list[tuple[int | None, str, bool, bool]] = []
+
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            if line.startswith("@@"):
+                m = re.match(r"@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@", line)
+                if m:
+                    left_num = int(m.group(1))
+                    right_num = int(m.group(2))
+                left_result.append((None, line, False, True))
+                right_result.append((None, line, False, True))
+                i += 1
+            elif line.startswith("-") or line.startswith("+"):
+                removed: list[str] = []
+                added: list[str] = []
+                while i < len(lines) and lines[i].startswith("-"):
+                    removed.append(lines[i][1:])
+                    i += 1
+                while i < len(lines) and lines[i].startswith("+"):
+                    added.append(lines[i][1:])
+                    i += 1
+                for j in range(max(len(removed), len(added))):
+                    if j < len(removed):
+                        left_result.append((left_num, removed[j], True, False))
+                        left_num += 1
+                    else:
+                        left_result.append((None, "", False, False))
+                    if j < len(added):
+                        right_result.append((right_num, added[j], True, False))
+                        right_num += 1
+                    else:
+                        right_result.append((None, "", False, False))
+            else:
+                content = line[1:] if line.startswith(" ") else line
+                left_result.append((left_num, content, False, False))
+                right_result.append((right_num, content, False, False))
+                left_num += 1
+                right_num += 1
+                i += 1
+
+        return left_result, right_result
+
+
+class ChangesPanel(Vertical):
+    """Panel listing changed files with expandable inline diffs."""
+
+    def compose(self) -> ComposeResult:
+        with Horizontal(id="changes-header"):
+            yield Static("Changes", id="changes-title")
+            yield Button("✕ Close", id="changes-close")
+        yield VerticalScroll(id="changes-scroll")
+
+    async def populate(self, files: list[ChangedFile]) -> None:
+        scroll = self.query_one("#changes-scroll", VerticalScroll)
+        await scroll.remove_children()
+        for changed_file in files:
+            await scroll.mount(ChangedFileItem(changed_file))
+        items = scroll.query(ChangedFileItem)
+        if items:
+            items.first().focus()
+
+
 class ModalDialogScreen(ModalScreen[None]):
     """Modal dialog with buttons, shown via /modal command."""
 
@@ -304,6 +499,66 @@ class CloudDisconnectConfirmScreen(ModalScreen[bool]):
     @on(Button.Pressed, "#cloud-disconnect-cancel")
     def action_cancel(self) -> None:
         self.dismiss(False)
+
+
+@dataclass
+class LLMProfile:
+    code: str
+    plan: str
+    ask: str
+
+
+class LLMProfileModalScreen(ModalScreen["LLMProfile | None"]):
+    """Modal for assigning a model to each agent mode (Code, Plan, Ask)."""
+
+    BINDINGS = [("escape", "cancel", "Cancel")]
+
+    MODES: list[tuple[str, str]] = [
+        ("code", "Code"),
+        ("plan", "Plan"),
+        ("ask", "Ask"),
+    ]
+
+    def __init__(self, profile: LLMProfile, models: list[str]) -> None:
+        super().__init__()
+        self._profile = profile
+        self._models = models
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="profile-modal"):
+            yield Static("LLM Profile", id="profile-modal-title")
+            yield Static(
+                "Assign a model to each agent mode.",
+                id="profile-modal-subtitle",
+            )
+            with Vertical(id="profile-rows"):
+                for mode_id, mode_label in self.MODES:
+                    with Horizontal(classes="profile-row"):
+                        yield Static(mode_label, classes="profile-mode-label")
+                        yield Select(
+                            ((m, m) for m in self._models),
+                            value=getattr(self._profile, mode_id),
+                            allow_blank=False,
+                            compact=True,
+                            id=f"profile-select-{mode_id}",
+                        )
+            with Horizontal(id="profile-buttons"):
+                yield Button("Save", id="profile-save")
+                yield Button("Cancel", id="profile-cancel")
+
+    @on(Button.Pressed, "#profile-save")
+    def on_save(self) -> None:
+        code = self.query_one("#profile-select-code", Select).value
+        plan = self.query_one("#profile-select-plan", Select).value
+        ask = self.query_one("#profile-select-ask", Select).value
+        if code is not Select.BLANK and plan is not Select.BLANK and ask is not Select.BLANK:
+            self.dismiss(LLMProfile(code=str(code), plan=str(plan), ask=str(ask)))
+        else:
+            self.dismiss(None)
+
+    @on(Button.Pressed, "#profile-cancel")
+    def action_cancel(self) -> None:
+        self.dismiss(None)
 
 
 class OpenHandsCommandProvider(Provider):
@@ -566,6 +821,7 @@ class MainShellScreen(Screen):
                     with Vertical(id="chat-panel"):
                         with VerticalScroll(id="chat-view"):
                             pass
+                        yield ChangesPanel(id="changes-panel")
                         with Horizontal(id="chat-input-row"):
                             yield Static(">", id="chat-input-prefix")
                             yield Input(
@@ -645,6 +901,7 @@ class MainShellScreen(Screen):
         self.code_city_towers = self._build_code_city_towers()
         self.board_task_to_thread: dict[str, str] = {}
         self._updating_cloud_picker = False
+        self.changes_visible = False
         self.code_city_loop_length = max(
             (tower["z"] + tower["depth"] for tower in self.code_city_towers),
             default=240.0,
@@ -730,11 +987,9 @@ class MainShellScreen(Screen):
         model_picker.value = app.model_name
         cloud_picker = self.query_one("#cloud-picker", Select)
         self._updating_cloud_picker = True
-        try:
-            cloud_picker.set_options((label, value) for label, value in app.cloud_picker_options)
-            cloud_picker.value = "cloud" if app.repo_source == "cloud" else "local"
-        finally:
-            self._updating_cloud_picker = False
+        cloud_picker.set_options((label, value) for label, value in app.cloud_picker_options)
+        cloud_picker.value = "cloud" if app.repo_source == "cloud" else "local"
+        self.call_after_refresh(lambda: setattr(self, "_updating_cloud_picker", False))
 
     def _render_tips_drawer(self) -> None:
         drawer = self.query_one("#tips-drawer", Static)
@@ -778,6 +1033,22 @@ class MainShellScreen(Screen):
         board.remove_class("-visible")
         flythrough.remove_class("-visible")
         self._apply_thread_drawer_visibility()
+        self._apply_changes_view_visibility()
+
+    def _apply_changes_view_visibility(self) -> None:
+        """Sync changes panel / chat-view display with self.changes_visible."""
+        chat_view = self.query_one("#chat-view", VerticalScroll)
+        changes_panel = self.query_one("#changes-panel", ChangesPanel)
+        if self.changes_visible:
+            chat_view.styles.display = "none"
+            changes_panel.add_class("-visible")
+        else:
+            chat_view.styles.display = "block"
+            changes_panel.remove_class("-visible")
+
+    def _set_changes_view_enabled(self, enabled: bool) -> None:
+        self.changes_visible = enabled
+        self._apply_changes_view_visibility()
 
     def _setup_approval_options(self) -> None:
         option_list = self.query_one("#approval-options", OptionList)
@@ -1357,7 +1628,7 @@ class MainShellScreen(Screen):
         self.query_one("#chat-input", Input).focus()
 
     @on(Select.Changed, "#model-picker")
-    async def on_model_picker_changed(self, event: Select.Changed[str]) -> None:
+    def on_model_picker_changed(self, event: Select.Changed[str]) -> None:
         if event.value is Select.BLANK:
             return
         app = self.app
@@ -1367,27 +1638,33 @@ class MainShellScreen(Screen):
             return
         previous_index = app.model_index
         app.model_index = app.models.index(selected_model)
-        await self.sync_from_app_state(include_tabs=False)
         if app.model_index != previous_index:
             self.notify(f"Model switched to {app.model_name}.")
 
+    def _set_cloud_picker_silent(self, value: str) -> None:
+        """Set the cloud picker value without triggering on_cloud_picker_changed."""
+        self._updating_cloud_picker = True
+        self.query_one("#cloud-picker", Select).value = value
+        self.call_after_refresh(lambda: setattr(self, "_updating_cloud_picker", False))
+
     @on(Select.Changed, "#cloud-picker")
     async def on_cloud_picker_changed(self, event: Select.Changed[str]) -> None:
-        if event.value is Select.BLANK or self._updating_cloud_picker:
+        if event.value is Select.BLANK or getattr(self, "_updating_cloud_picker", True):
+            return
+        if not self.is_attached:
             return
         app = self.app
         assert isinstance(app, OpenHandsCLIApp)
         value = event.value
-        cloud_picker = self.query_one("#cloud-picker", Select)
         if value == "connect_cloud":
             self.app.push_screen(CloudConnectModalScreen())
-            cloud_picker.value = "local"
+            self._set_cloud_picker_silent("local")
             return
         if value == "separator":
-            cloud_picker.value = "cloud" if app.repo_source == "cloud" else "local"
+            self._set_cloud_picker_silent("cloud" if app.repo_source == "cloud" else "local")
             return
         if value == "disconnect_cloud":
-            cloud_picker.value = "cloud"
+            self._set_cloud_picker_silent("cloud")
 
             async def _on_disconnect_confirmed(confirmed: bool) -> None:
                 if not confirmed:
@@ -1401,16 +1678,22 @@ class MainShellScreen(Screen):
             return
         if value == "cloud":
             if not app.set_repo_source("cloud"):
-                cloud_picker.value = "local"
+                self._set_cloud_picker_silent("local")
                 self.notify("Connect to Cloud first.")
                 return
-            await self.sync_from_app_state(include_tabs=False)
             self.notify("Repository source set to cloud.")
             return
         if value == "local":
-            if app.set_repo_source("local"):
-                await self.sync_from_app_state(include_tabs=False)
+            was_cloud = app.repo_source == "cloud"
+            app.set_repo_source("local")
+            if was_cloud:
                 self.notify("Repository source set to local.")
+
+    @on(Button.Pressed, "#changes-close")
+    def on_changes_close_pressed(self, event: Button.Pressed) -> None:
+        event.stop()
+        self._set_changes_view_enabled(False)
+        self.query_one("#chat-input", Input).focus()
 
     async def _run_slash_command(self, raw_text: str) -> bool:
         app = self.app
@@ -1597,6 +1880,29 @@ class MainShellScreen(Screen):
             self.notify("Created a new conversation thread.")
         elif command_name == "modal":
             self.app.push_screen(ModalDialogScreen())
+        elif command_name == "profile":
+
+            def _on_profile_saved(profile: LLMProfile | None) -> None:
+                if profile is not None:
+                    app.llm_profile = profile
+                    self.notify("LLM profile updated.")
+
+            self.app.push_screen(
+                LLMProfileModalScreen(app.llm_profile, app.models),
+                _on_profile_saved,
+            )
+        elif command_name == "changes":
+            show = not self.changes_visible
+            if show:
+                await self.query_one("#changes-panel", ChangesPanel).populate(app.changed_files)
+            self._set_changes_view_enabled(show)
+            state = "visible" if show else "hidden"
+            app.active_thread.messages.append(
+                ChatMessage(
+                    "assistant",
+                    f"Changes view is now **{state}**.\n\nUse `/changes` to toggle.",
+                )
+            )
         elif command_name == "exit":
             app.exit()
             return True
@@ -1747,6 +2053,11 @@ class OpenHandsCLIApp(App):
         self.branch_name = "feature/kanban-interactive-board"
         self.models = self.DEFAULT_MODELS.copy()
         self.model_index = 0
+        self.llm_profile = LLMProfile(
+            code=self.DEFAULT_MODELS[0],
+            plan=self.DEFAULT_MODELS[0],
+            ask=self.DEFAULT_MODELS[0],
+        )
         self.thread_count = 0
         self.threads = self._build_seed_threads()
         self.active_thread_id = next(iter(self.threads))
@@ -1755,6 +2066,7 @@ class OpenHandsCLIApp(App):
         self.conversation_id: str | None = None
         self.todo_items = self._build_seed_todos()
         self.credit_cost = 0.065
+        self.changed_files = self._build_mock_changed_files()
 
     @property
     def repo_source(self) -> str:
@@ -1764,12 +2076,12 @@ class OpenHandsCLIApp(App):
     def cloud_picker_options(self) -> list[tuple[str, str]]:
         if self.cloud_connected:
             return [
-                ("Local", "local"),
-                ("Cloud", "cloud"),
+                (" Local", "local"),
+                (" Cloud", "cloud"),
                 ("─" * 40, "separator"),
-                ("Disconnect Cloud", "disconnect_cloud"),
+                (" Disconnect Cloud", "disconnect_cloud"),
             ]
-        return [("Local", "local"), ("Connect to Cloud", "connect_cloud")]
+        return [(" Local", "local"), (" Connect to Cloud", "connect_cloud")]
 
     @property
     def model_name(self) -> str:
@@ -1819,6 +2131,8 @@ class OpenHandsCLIApp(App):
             SlashCommand("model", "Switch active model"),
             SlashCommand("modal", "Show a modal dialog with buttons"),
             SlashCommand("new", "Create a new conversation thread"),
+            SlashCommand("profile", "Configure model per agent mode (Code, Plan, Ask)"),
+            SlashCommand("changes", "Show changed files with expandable diffs"),
         ]
 
     def on_mount(self) -> None:
@@ -2139,6 +2453,124 @@ class OpenHandsCLIApp(App):
                 ],
             ),
         }
+
+    def _build_mock_changed_files(self) -> list[ChangedFile]:
+        return [
+            ChangedFile(
+                path="src/components/auth/LoginForm.tsx",
+                additions=24,
+                deletions=8,
+                diff_lines=[
+                    "--- a/src/components/auth/LoginForm.tsx",
+                    "+++ b/src/components/auth/LoginForm.tsx",
+                    "@@ -12,8 +12,24 @@ import { useAuth } from '../hooks/useAuth';",
+                    " const LoginForm = () => {",
+                    "-  const [error, setError] = useState(null);",
+                    "+  const [error, setError] = useState<string | null>(null);",
+                    "+  const [loading, setLoading] = useState(false);",
+                    " ",
+                    "   const handleSubmit = async (e: FormEvent) => {",
+                    "+    setLoading(true);",
+                    "     try {",
+                    "       await auth.login(credentials);",
+                    "+    } finally {",
+                    "+      setLoading(false);",
+                    "     }",
+                    "   };",
+                ],
+            ),
+            ChangedFile(
+                path="src/utils/dict_helpers.py",
+                additions=18,
+                deletions=4,
+                diff_lines=[
+                    "--- a/src/utils/dict_helpers.py",
+                    "+++ b/src/utils/dict_helpers.py",
+                    "@@ -1,12 +1,26 @@",
+                    " from __future__ import annotations",
+                    " ",
+                    "-def get_value(d: dict, key: str, default=None):",
+                    "+def get_value(d: dict, key: str, default=None, separator: str = '.'):",
+                    '+    """Get nested dict value using dot-separated key path."""',
+                    "+    keys = key.split(separator)",
+                    "+    current = d",
+                    "+    for k in keys:",
+                    "+        if not isinstance(current, dict):",
+                    "+            return default",
+                    "+        current = current.get(k, default)",
+                    "+        if current is default:",
+                    "+            return default",
+                    "+    return current",
+                    "-    return d.get(key, default)",
+                ],
+            ),
+            ChangedFile(
+                path="src/styles/global.css",
+                additions=6,
+                deletions=4,
+                diff_lines=[
+                    "--- a/src/styles/global.css",
+                    "+++ b/src/styles/global.css",
+                    "@@ -45,6 +45,8 @@ body {",
+                    " .container {",
+                    "-  max-width: 1200px;",
+                    "+  max-width: 1400px;",
+                    "+  margin: 0 auto;",
+                    "   padding: 0 20px;",
+                    " }",
+                    "@@ -60,4 +62,4 @@ .nav {",
+                    "-  background: #fff;",
+                    "+  background: var(--bg-primary);",
+                    "   border-bottom: 1px solid var(--border);",
+                    " }",
+                ],
+            ),
+            ChangedFile(
+                path="tests/test_auth.py",
+                additions=32,
+                deletions=0,
+                diff_lines=[
+                    "--- /dev/null",
+                    "+++ b/tests/test_auth.py",
+                    "@@ -0,0 +1,32 @@",
+                    "+import pytest",
+                    "+from unittest.mock import MagicMock, patch",
+                    "+from src.components.auth.login import LoginForm",
+                    "+",
+                    "+class TestLoginForm:",
+                    "+    def test_submit_sets_loading(self):",
+                    "+        form = LoginForm()",
+                    "+        with patch.object(form, 'auth') as mock_auth:",
+                    "+            mock_auth.login = MagicMock(return_value=None)",
+                    "+            form.handleSubmit(MagicMock())",
+                    "+            assert form.loading == False",
+                    "+",
+                    "+    def test_error_typing(self):",
+                    "+        form = LoginForm()",
+                    "+        assert form.error is None",
+                ],
+            ),
+            ChangedFile(
+                path="README.md",
+                additions=5,
+                deletions=2,
+                diff_lines=[
+                    "--- a/README.md",
+                    "+++ b/README.md",
+                    "@@ -1,5 +1,8 @@",
+                    " # Project",
+                    " ",
+                    "-A simple auth demo.",
+                    "+A full-featured authentication demo with:",
+                    "+- Type-safe state management",
+                    "+- Loading indicators",
+                    "+- Nested dict utilities",
+                    " ",
+                    "-See `src/` for source.",
+                    "+See `src/` for full source code.",
+                ],
+            ),
+        ]
 
     def _build_seed_todos(self) -> list[TodoItem]:
         return [
