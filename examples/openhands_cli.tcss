@@ -659,6 +659,22 @@ ModalScreen {
     background: rgba(0, 0, 0, 0.75);
 }
 
+/* Hint bar at bottom of modals (matches profile2 / pm-shortcuts) */
+.modal-hint-bar {
+    height: 1;
+    width: 1fr;
+    background: transparent;
+    color: #606060;
+    padding: 0 2;
+    margin: 0;
+    content-align: left middle;
+    border-top: solid #3a3a3a;
+}
+
+.modal-hint-bar.-no-line {
+    border-top: none;
+}
+
 /* Modal dialog shown via /modal command */
 ModalDialogScreen {
     align: center middle;
@@ -707,7 +723,7 @@ CloudConnectModalScreen {
     height: auto;
     max-width: 90%;
     border: round #8a8a8a;
-    padding: 1 2;
+    padding: 1 2 0 2;
 }
 
 #cloud-connect-title {
@@ -759,7 +775,7 @@ CloudDisconnectConfirmScreen {
     width: 44;
     height: auto;
     border: round #8a8a8a;
-    padding: 1 2;
+    padding: 1 2 0 2;
 }
 
 #cloud-disconnect-title {
@@ -809,6 +825,95 @@ CloudDisconnectConfirmScreen {
     background: #1a1a1a !important;
 }
 
+/* New conversation location modal */
+NewConversationLocationModal {
+    align: center middle;
+}
+
+#new-conv-location-modal {
+    width: 48;
+    height: auto;
+    border: round #8a8a8a;
+    padding: 1 2 0 2;
+}
+
+#new-conv-location-title {
+    width: 1fr;
+    text-style: bold;
+    content-align: center middle;
+    padding: 1 0;
+}
+
+#new-conv-location-subtitle {
+    width: 1fr;
+    content-align: center middle;
+    color: #a0a0a0;
+    padding: 0 0 1 0;
+}
+
+#new-conv-location-buttons {
+    width: 1fr;
+    height: auto;
+    align: center middle;
+    margin-top: 1;
+}
+
+#new-conv-location-local {
+    width: 14;
+    border: round #8a8a8a;
+    background: transparent !important;
+    color: #f2f2f2;
+    margin-right: 1;
+}
+
+#new-conv-location-local:hover,
+#new-conv-location-local:focus {
+    background: #1a1a1a !important;
+    border: round #c8c8c8;
+}
+
+#new-conv-location-cloud {
+    width: 14;
+    border: round #4a8fc4;
+    background: transparent !important;
+    color: #7ab8e8;
+}
+
+#new-conv-location-cloud:hover,
+#new-conv-location-cloud:focus {
+    background: #0e1e2e !important;
+    border: round #7ab8e8;
+    color: #a8d0f0;
+}
+
+#new-conv-location-cancel-row {
+    width: 1fr;
+    height: auto;
+    align: center middle;
+    margin-top: 1;
+    margin-bottom: 1;
+}
+
+#new-conv-location-cancel {
+    width: 12;
+    border: round #555555;
+    background: transparent !important;
+    color: #707070;
+}
+
+#new-conv-location-cancel:hover,
+#new-conv-location-cancel:focus {
+    background: #1a1a1a !important;
+    border: round #8a8a8a;
+    color: #a0a0a0;
+}
+
+#new-conv-location-modal .modal-hint-bar {
+    height: 2;
+    margin: 0 -2;
+    padding: 0 2;
+}
+
 /* LLM Profile modal */
 LLMProfileModalScreen {
     align: center middle;
@@ -818,7 +923,7 @@ LLMProfileModalScreen {
     width: 58;
     height: auto;
     border: round #8a8a8a;
-    padding: 1 2;
+    padding: 1 2 0 2;
 }
 
 #profile-modal-title {
@@ -1171,7 +1276,7 @@ CreateProfileModal {
     width: 62;
     height: auto;
     border: round #555555;
-    padding: 1 2;
+    padding: 1 2 0 2;
     background: #111111;
 }
 
@@ -1274,7 +1379,7 @@ DeleteProfileConfirmModal {
     width: 50;
     height: auto;
     border: round #555555;
-    padding: 1 2;
+    padding: 1 2 0 2;
     background: #111111;
 }
 

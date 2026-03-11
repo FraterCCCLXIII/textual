@@ -25,6 +25,11 @@ from textual.widgets.option_list import Option
 from rich.segment import Segment
 from rich.style import Style as RichStyle
 
+# Hint bar text shown at bottom of profile manager
+HINT_BAR_TEXT = (
+    "↑↓ Move   Enter Switch   n New   e Edit   d Default   x Delete   c Copy   r Refresh   q Close"
+)
+
 
 class CheckmarkSelectOverlay(SelectOverlay):
     """SelectOverlay base that renders a right-aligned ✓ on the active option row.
@@ -83,30 +88,7 @@ class CheckmarkSelectOverlay(SelectOverlay):
         return strips
 
 
-class ModelPickerOverlay(CheckmarkSelectOverlay):
-    """Overlay for the model picker — adds the active-option checkmark."""
-
-
-class ModelPickerSelect(Select[str]):
-    """Select widget that uses ModelPickerOverlay."""
-
-    def compose(self) -> ComposeResult:
-        yield SelectCurrent(self.prompt)
-        yield ModelPickerOverlay(type_to_search=self._type_to_search).data_bind(
-            compact=Select.compact
-        )
-
-    def _on_mouse_down(self, event: events.MouseDown) -> None:
-        """Backup: if the SelectCurrent toggle mechanism doesn't fire, open from mouse-down."""
-        if not self.expanded:
-            def _open_if_still_closed() -> None:
-                if not self.expanded:
-                    self.focus()
-                    self.action_show_overlay()
-            self.call_after_refresh(_open_if_still_closed)
-
-
-class CloudPickerOverlay(CheckmarkSelectOverlay):
+class _SeparatorCheckmarkOverlay(CheckmarkSelectOverlay):
     """CheckmarkSelectOverlay that also renders the separator row as border T-junctions
     (├ / ┤) and skips the separator on arrow-key navigation."""
 
@@ -155,6 +137,33 @@ class CloudPickerOverlay(CheckmarkSelectOverlay):
             strips[local_y] = Strip(new_segments, strips[local_y].cell_length)
 
         return strips
+
+
+class CloudPickerOverlay(_SeparatorCheckmarkOverlay):
+    """Alias for cloud picker — uses separator + checkmark overlay."""
+
+
+class ModelPickerOverlay(_SeparatorCheckmarkOverlay):
+    """Overlay for the model picker — adds checkmark and separator (T-junction) handling."""
+
+
+class ModelPickerSelect(Select[str]):
+    """Select widget that uses ModelPickerOverlay."""
+
+    def compose(self) -> ComposeResult:
+        yield SelectCurrent(self.prompt)
+        yield ModelPickerOverlay(type_to_search=self._type_to_search).data_bind(
+            compact=Select.compact
+        )
+
+    def _on_mouse_down(self, event: events.MouseDown) -> None:
+        """Backup: if the SelectCurrent toggle mechanism doesn't fire, open from mouse-down."""
+        if not self.expanded:
+            def _open_if_still_closed() -> None:
+                if not self.expanded:
+                    self.focus()
+                    self.action_show_overlay()
+            self.call_after_refresh(_open_if_still_closed)
 
 
 class CloudPickerSelect(Select[str]):
@@ -436,12 +445,14 @@ class ModalDialogScreen(ModalScreen[None]):
     """Modal dialog with buttons, shown via /modal command."""
 
     def compose(self) -> ComposeResult:
-        yield Grid(
-            Label("Modal Dialog", id="modal-title"),
-            Button("OK", id="modal-ok"),
-            Button("Cancel", id="modal-cancel"),
-            id="modal-dialog",
-        )
+        with Vertical():
+            yield Grid(
+                Label("Modal Dialog", id="modal-title"),
+                Button("OK", id="modal-ok"),
+                Button("Cancel", id="modal-cancel"),
+                id="modal-dialog",
+            )
+            yield Static("Tab Switch   Enter Select   q Close", classes="modal-hint-bar")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         self.dismiss()
@@ -463,6 +474,7 @@ class CloudConnectModalScreen(ModalScreen[None]):
                 id="cloud-connect-waiting",
             )
             yield Button("Cancel", id="cloud-connect-cancel")
+            yield Static("q Close", classes="modal-hint-bar")
 
     @on(Button.Pressed, "#cloud-connect-cancel")
     def on_cloud_connect_cancel(self) -> None:
@@ -492,6 +504,7 @@ class CloudDisconnectConfirmScreen(ModalScreen[bool]):
             with Horizontal(id="cloud-disconnect-buttons"):
                 yield Button("Disconnect", id="cloud-disconnect-confirm", variant="error")
                 yield Button("Cancel", id="cloud-disconnect-cancel")
+            yield Static("Tab Switch   Enter Confirm   q Close", classes="modal-hint-bar")
 
     @on(Button.Pressed, "#cloud-disconnect-confirm")
     def on_confirm(self) -> None:
@@ -500,6 +513,41 @@ class CloudDisconnectConfirmScreen(ModalScreen[bool]):
     @on(Button.Pressed, "#cloud-disconnect-cancel")
     def action_cancel(self) -> None:
         self.dismiss(False)
+
+
+class NewConversationLocationModal(ModalScreen[str | None]):
+    """Ask the user whether to run the new conversation locally or on Cloud."""
+
+    BINDINGS = [("escape", "cancel", "Cancel")]
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="new-conv-location-modal"):
+            yield Static("Start New Conversation", id="new-conv-location-title")
+            yield Static(
+                "Where should this conversation run?",
+                id="new-conv-location-subtitle",
+            )
+            with Horizontal(id="new-conv-location-buttons"):
+                yield Button("Local", id="new-conv-location-local")
+                yield Button("Cloud", id="new-conv-location-cloud")
+            with Horizontal(id="new-conv-location-cancel-row"):
+                yield Button("Cancel", id="new-conv-location-cancel")
+            yield Static("Tab Switch   Enter Select   Esc Cancel", classes="modal-hint-bar")
+
+    @on(Button.Pressed, "#new-conv-location-local")
+    def on_local(self) -> None:
+        self.dismiss("local")
+
+    @on(Button.Pressed, "#new-conv-location-cloud")
+    def on_cloud(self) -> None:
+        self.dismiss("cloud")
+
+    @on(Button.Pressed, "#new-conv-location-cancel")
+    def on_cancel_pressed(self) -> None:
+        self.dismiss(None)
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
 
 
 @dataclass
@@ -570,6 +618,7 @@ class LLMProfileModalScreen(ModalScreen["LLMProfile | None"]):
             with Horizontal(id="profile-buttons"):
                 yield Button("Save", id="profile-save")
                 yield Button("Cancel", id="profile-cancel")
+            yield Static("↑↓ Move   Tab Switch   Enter Save   q Close", classes="modal-hint-bar")
 
     @on(Button.Pressed, "#profile-save")
     def on_save(self) -> None:
@@ -650,6 +699,7 @@ class CreateProfileModal(ModalScreen["RuntimeProfile | None"]):
             with Horizontal(id="cp-buttons"):
                 yield Button("Save" if self._editing else "Create", id="cp-save")
                 yield Button("Cancel", id="cp-cancel")
+            yield Static("Tab Switch   Enter Submit   q Close", classes="modal-hint-bar")
 
     @on(Button.Pressed, "#cp-save")
     def on_save(self) -> None:
@@ -709,6 +759,7 @@ class DeleteProfileConfirmModal(ModalScreen[bool]):
             with Horizontal(id="dp-buttons"):
                 yield Button("Delete", id="dp-confirm", variant="error")
                 yield Button("Cancel", id="dp-cancel")
+            yield Static("Tab Switch   Enter Confirm   q Close", classes="modal-hint-bar")
 
     @on(Button.Pressed, "#dp-confirm")
     def on_confirm(self) -> None:
@@ -752,10 +803,7 @@ class ProfileManagerPanel(Vertical):
             yield OptionList(id="pm-profile-list")
             with Vertical(id="pm-details-panel"):
                 yield Static("", id="pm-details-content")
-        yield Static(
-            "↑↓ Move   Enter Switch   n New   e Edit   d Default   x Delete   c Copy   r Refresh   q Close",
-            id="pm-shortcuts",
-        )
+        yield Static(HINT_BAR_TEXT, id="pm-shortcuts")
 
     def populate(self) -> None:
         """Sync from app state and focus the list."""
@@ -1274,7 +1322,7 @@ class MainShellScreen(Screen):
                                 compact=True,
                                 id="model-picker",
                             )
-                            yield _ModelFooterLabel("^m     ⛁", id="model-shortcut")
+                            yield _ModelFooterLabel("Ctrl+m     ⛁", id="model-shortcut")
                             yield CloudPickerSelect(
                                 (
                                     (" Local", "local"),
@@ -1285,7 +1333,7 @@ class MainShellScreen(Screen):
                                 compact=True,
                                 id="cloud-picker",
                             )
-                            yield _CloudFooterLabel("^c", id="cloud-shortcut")
+                            yield _CloudFooterLabel("Ctrl+c", id="cloud-shortcut")
                             yield Static(id="status-right-spacer")
                             yield Static(
                                 "ctx N/A  •  $ 0.00  (↑ 0  ↓ 0  cache N/A)",
@@ -1333,6 +1381,7 @@ class MainShellScreen(Screen):
         self.code_city_towers = self._build_code_city_towers()
         self.board_task_to_thread: dict[str, str] = {}
         self._updating_cloud_picker = False
+        self._updating_model_picker = False
         self.changes_visible = False
         self.pm_visible = False
         self.code_city_loop_length = max(
@@ -1416,8 +1465,10 @@ class MainShellScreen(Screen):
         branch_display = branch_name if len(branch_name) <= 12 else f"{branch_name[:11]}…"
         self.query_one("#status-left", Static).update(f"[#8a8a8a]<>[/] {repo_display}   [#8a8a8a]⎇[/] {branch_display}   ")
         model_picker = self.query_one("#model-picker", Select)
-        model_picker.set_options((model, model) for model in app.models)
+        self._updating_model_picker = True
+        model_picker.set_options((label, value) for label, value in app.model_picker_options)
         model_picker.value = app.model_name
+        self.call_after_refresh(lambda: setattr(self, "_updating_model_picker", False))
         cloud_picker = self.query_one("#cloud-picker", Select)
         self._updating_cloud_picker = True
         cloud_picker.set_options((label, value) for label, value in app.cloud_picker_options)
@@ -1963,9 +2014,19 @@ class MainShellScreen(Screen):
     async def action_new_thread(self) -> None:
         app = self.app
         assert isinstance(app, OpenHandsCLIApp)
-        app.create_thread()
-        await self.sync_from_app_state()
-        self.notify("Created a new mock conversation thread.")
+        if app.cloud_connected:
+            def _on_location_chosen(location: str | None) -> None:
+                if location is None:
+                    return
+                app.create_thread(location=location)
+                self.run_worker(self.sync_from_app_state(), exclusive=True, group="ui-sync")
+                self.notify(f"Created a new conversation thread ({location}).")
+
+            self.app.push_screen(NewConversationLocationModal(), _on_location_chosen)
+        else:
+            app.create_thread()
+            await self.sync_from_app_state()
+            self.notify("Created a new mock conversation thread.")
 
     def action_expand_cloud_picker(self) -> None:
         cloud_picker = self.query_one("#cloud-picker", Select)
@@ -2087,17 +2148,31 @@ class MainShellScreen(Screen):
 
     @on(Select.Changed, "#model-picker")
     def on_model_picker_changed(self, event: Select.Changed[str]) -> None:
-        if event.value is Select.BLANK:
+        if event.value is Select.BLANK or getattr(self, "_updating_model_picker", True):
             return
         app = self.app
         assert isinstance(app, OpenHandsCLIApp)
-        selected_model = event.value
-        if selected_model not in app.models:
+        value = event.value
+        if value == "separator":
+            self._set_model_picker_silent(app.model_name)
+            return
+        if value == "llm_profiles":
+            self._set_model_picker_silent(app.model_name)
+            self._set_pm_view_enabled(True)
+            self.query_one("#chat-input", Input).focus()
+            return
+        if value not in app.models:
             return
         previous_index = app.model_index
-        app.model_index = app.models.index(selected_model)
+        app.model_index = app.models.index(value)
         if app.model_index != previous_index:
             self.notify(f"Model switched to {app.model_name}.")
+
+    def _set_model_picker_silent(self, value: str) -> None:
+        """Set the model picker value without triggering on_model_picker_changed."""
+        self._updating_model_picker = True
+        self.query_one("#model-picker", Select).value = value
+        self.call_after_refresh(lambda: setattr(self, "_updating_model_picker", False))
 
     def _set_cloud_picker_silent(self, value: str) -> None:
         """Set the cloud picker value without triggering on_cloud_picker_changed."""
@@ -2334,6 +2409,16 @@ class MainShellScreen(Screen):
                 app.cycle_model()
             self.notify(f"Model switched to {app.model_name}.")
         elif command_name == "new":
+            if app.cloud_connected:
+                def _on_location_chosen(location: str | None) -> None:
+                    if location is None:
+                        return
+                    app.create_thread(location=location)
+                    self.run_worker(self.sync_from_app_state(), exclusive=True, group="ui-sync")
+                    self.notify(f"Created a new conversation thread ({location}).")
+
+                self.app.push_screen(NewConversationLocationModal(), _on_location_chosen)
+                return
             app.create_thread()
             self.notify("Created a new conversation thread.")
         elif command_name == "modal":
@@ -2561,6 +2646,15 @@ class OpenHandsCLIApp(App):
         return [(" Local", "local"), (" Connect to Cloud", "connect_cloud")]
 
     @property
+    def model_picker_options(self) -> list[tuple[str, str]]:
+        """Model options plus separator and LLM Profiles action at bottom."""
+        return [
+            *((model, model) for model in self.models),
+            ("─" * 40, "separator"),
+            ("⚙ LLM Profiles", "llm_profiles"),
+        ]
+
+    @property
     def model_name(self) -> str:
         return self.models[self.model_index]
 
@@ -2761,13 +2855,14 @@ class OpenHandsCLIApp(App):
     def cycle_model(self) -> None:
         self.model_index = (self.model_index + 1) % len(self.models)
 
-    def create_thread(self) -> None:
+    def create_thread(self, location: str | None = None) -> None:
         self.thread_count += 1
         thread_id = f"thread-{self.thread_count + len(self.threads)}"
         title = "New Session"
+        effective_location = location if location is not None else self.repo_source
         repository = (
             "./workspace/new-product"
-            if self.repo_source == "local"
+            if effective_location == "local"
             else "github.com/acme/new-product"
         )
         self.threads[thread_id] = ConversationThread(
@@ -2880,8 +2975,24 @@ class OpenHandsCLIApp(App):
             self.repo_source_index = 1
             self.notify("Connected to cloud repositories (mock).")
         elif command_id == "new_thread":
-            self.create_thread()
-            self.notify("Created new conversation thread.")
+            if self.cloud_connected:
+                def _on_location_chosen(location: str | None) -> None:
+                    if location is None:
+                        return
+                    self.create_thread(location=location)
+                    self.notify(f"Created new conversation thread ({location}).")
+                    if isinstance(self.screen, MainShellScreen):
+                        self.run_worker(
+                            self.screen.sync_from_app_state(),
+                            exclusive=True,
+                            group="ui-sync",
+                        )
+
+                self.push_screen(NewConversationLocationModal(), _on_location_chosen)
+                return
+            else:
+                self.create_thread()
+                self.notify("Created new conversation thread.")
         elif command_id == "switch_model":
             self.cycle_model()
             self.notify(f"Model switched to {self.model_name}.")
