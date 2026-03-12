@@ -1,0 +1,726 @@
+/* ============================================================
+   Component Library — Minimal / Monochromatic stylesheet
+   Ghost-outlined buttons, no colour fills, neutral palette.
+   Only $panel / $surface / $background used for structure;
+   $text / $text-muted / $text-disabled used only for color:.
+   ============================================================ */
+
+/* ------ Global: outlined ghost buttons --------------------- */
+
+Button {
+    background: transparent;
+    border: solid $surface;
+    color: $text;
+    text-style: none;
+}
+Button:hover {
+    background: $surface;
+    border: solid $panel;
+    color: $text;
+}
+Button:focus {
+    border: solid $panel;
+    background: $surface;
+}
+Button.-active {
+    background: $panel;
+}
+
+/* Collapse all variant fills into the same ghost style */
+Button.-primary,
+Button.-success,
+Button.-warning,
+Button.-error {
+    background: transparent;
+    border: solid $surface;
+    color: $text;
+}
+Button.-primary:hover,
+Button.-success:hover,
+Button.-warning:hover,
+Button.-error:hover {
+    background: $surface;
+    border: solid $panel;
+}
+Button.-primary:focus,
+Button.-success:focus,
+Button.-warning:focus,
+Button.-error:focus {
+    border: solid $panel;
+    background: $surface;
+}
+
+/* Disabled */
+Button:disabled {
+    background: transparent;
+    border: solid $panel;
+    color: $text-disabled;
+}
+
+/* ------ Header / Footer ------------------------------------ */
+
+Header {
+    background: $background;
+    color: $text;
+    border-bottom: solid $panel;
+}
+HeaderTitle {
+    color: $text;
+}
+Footer {
+    background: $background;
+    color: $text-muted;
+    border-top: solid $panel;
+}
+
+/* ------ App shell ------------------------------------------ */
+
+#app-body {
+    height: 1fr;
+    background: $background;
+}
+#main-switcher {
+    width: 1fr;
+    height: 1fr;
+}
+
+/* ------ Sidebar active item -------------------------------- */
+
+Sidebar ListItem.active {
+    background: $surface;
+    border-left: thick $panel;
+}
+Sidebar ListItem.active > Label {
+    color: $text;
+    text-style: bold;
+}
+
+/* ------ Section panels ------------------------------------- */
+
+ButtonsPanel,
+InputsPanel,
+SelectionPanel,
+ListsPanel,
+DataPanel,
+ProgressPanel,
+ContentPanel,
+TabbedPanel,
+LayoutPanel,
+DigitsPanel,
+WorkersPanel,
+ModalPanel,
+ThemePanel {
+    padding: 1 3 2 3;
+    scrollbar-gutter: stable;
+    background: $background;
+}
+
+/* ------ Shared helpers ------------------------------------- */
+
+SectionTitle {
+    margin-top: 1;
+    text-style: bold;
+    color: $text;
+}
+CodeHint {
+    color: $text-disabled;
+    text-style: italic;
+}
+SectionDivider {
+    border-bottom: solid $panel;
+    margin: 1 0;
+}
+
+/* ------ Input / TextArea ----------------------------------- */
+
+Input {
+    border: solid $surface;
+    background: transparent;
+    color: $text;
+}
+Input:focus {
+    border: solid $panel;
+}
+TextArea {
+    border: solid $surface;
+    background: transparent;
+}
+TextArea:focus {
+    border: solid $panel;
+}
+MaskedInput {
+    border: solid $surface;
+    background: transparent;
+}
+MaskedInput:focus {
+    border: solid $panel;
+}
+
+/* ------ Select / OptionList / RadioSet / SelectionList ----- */
+
+Select > SelectCurrent {
+    border: solid $surface;
+    background: transparent;
+    color: $text;
+    background-tint: 0%;
+}
+Select:focus > SelectCurrent {
+    border: solid $panel;
+}
+SelectOverlay {
+    border: solid $surface;
+    background: $background;
+}
+
+OptionList {
+    background: transparent;
+    border: solid $panel;
+    color: $text;
+}
+OptionList > .option-list--option-highlighted {
+    background: $surface;
+    color: $text;
+}
+OptionList:focus > .option-list--option-highlighted {
+    background: $panel;
+}
+
+RadioSet {
+    background: transparent;
+    border: none;
+}
+RadioButton {
+    background: transparent;
+    color: $text;
+}
+
+SelectionList {
+    background: transparent;
+    border: solid $panel;
+    color: $text;
+}
+SelectionList > .selection-list--button-highlighted {
+    background: $surface;
+}
+
+/* ------ Switch --------------------------------------------- */
+
+Switch {
+    background: transparent;
+    border: none;
+}
+
+/* ------ ToggleButton --------------------------------------- */
+
+ToggleButton {
+    background: transparent;
+    border: solid $surface;
+    color: $text;
+}
+ToggleButton:hover {
+    background: $surface;
+    border: solid $panel;
+}
+ToggleButton.-on {
+    background: $surface;
+    border: solid $panel;
+    color: $text;
+    text-style: bold;
+}
+
+/* ------ DataTable ------------------------------------------ */
+
+DataTable {
+    background: transparent;
+    border: solid $panel;
+    color: $text;
+}
+DataTable > .datatable--header {
+    background: $panel;
+    color: $text;
+    text-style: bold;
+}
+DataTable > .datatable--cursor {
+    background: $surface;
+    color: $text;
+}
+DataTable > .datatable--odd-row {
+    background: $panel;
+}
+
+/* ------ ProgressBar ---------------------------------------- */
+
+ProgressBar > .bar--bar {
+    color: $text-muted;
+}
+ProgressBar > .bar--complete {
+    color: $text;
+}
+
+/* ------ LoadingIndicator ----------------------------------- */
+
+LoadingIndicator {
+    color: $text-muted;
+    background: transparent;
+}
+
+/* ------ Tree ----------------------------------------------- */
+
+Tree {
+    background: transparent;
+    border: solid $panel;
+    color: $text;
+}
+Tree > .tree--guides {
+    color: $text-disabled;
+}
+Tree > .tree--cursor {
+    background: $surface;
+    color: $text;
+}
+
+/* ------ ListView ------------------------------------------- */
+
+ListView {
+    background: transparent;
+    border: solid $panel;
+}
+ListItem {
+    background: transparent;
+    color: $text-muted;
+}
+ListItem.--highlight {
+    background: $surface;
+    color: $text;
+}
+
+/* ------ Collapsible ---------------------------------------- */
+
+Collapsible {
+    background: transparent;
+    border-top: solid $panel;
+    padding: 0 0 0 1;
+}
+CollapsibleTitle {
+    background: transparent;
+    color: $text;
+    text-style: bold;
+    padding: 0 1;
+}
+CollapsibleTitle:hover {
+    background: $surface;
+}
+
+/* ------ TabbedContent / Tabs ------------------------------- */
+
+TabbedContent > TabPane {
+    background: transparent;
+}
+Tabs {
+    background: transparent;
+    border-bottom: solid $panel;
+}
+Tab {
+    background: transparent;
+    color: $text-muted;
+    border-bottom: solid transparent;
+}
+Tab:hover {
+    background: $surface;
+    color: $text;
+}
+Tab.-active {
+    background: transparent;
+    color: $text;
+    border-bottom: solid $panel;
+    text-style: bold;
+}
+Tab:focus {
+    background: $surface;
+}
+
+/* ------ ContentSwitcher ------------------------------------ */
+
+ContentSwitcher {
+    background: transparent;
+}
+
+/* ------ RichLog -------------------------------------------- */
+
+RichLog {
+    background: transparent;
+    border: solid $panel;
+    color: $text;
+}
+
+/* ------ Markdown ------------------------------------------- */
+
+Markdown {
+    background: transparent;
+    color: $text;
+}
+MarkdownViewer {
+    background: transparent;
+}
+
+/* ------ Buttons panel -------------------------------------- */
+
+#btn-variants {
+    height: auto;
+    margin-bottom: 1;
+    & > Button { margin-right: 1; }
+}
+#btn-states {
+    height: auto;
+    margin-bottom: 1;
+    & > Button { margin-right: 1; }
+}
+#press-counter {
+    text-style: bold;
+    color: $text;
+    margin-bottom: 1;
+}
+#btn-counter-row {
+    height: auto;
+    & > Button { margin-right: 1; }
+}
+
+/* ------ Inputs panel --------------------------------------- */
+
+InputsPanel Input { margin-bottom: 1; }
+#input-echo {
+    color: $text-muted;
+    margin-bottom: 1;
+}
+#code-area {
+    height: 10;
+    margin-bottom: 1;
+}
+#echo-output {
+    color: $text-muted;
+    margin-top: 1;
+}
+
+/* ------ Selection panel ------------------------------------ */
+
+#fruit-select {
+    margin-bottom: 1;
+    width: 30;
+}
+#fruit-label {
+    color: $text-muted;
+    margin-bottom: 1;
+}
+#lang-option-list {
+    height: 7;
+    margin-bottom: 1;
+}
+#option-label {
+    color: $text-muted;
+    margin-bottom: 1;
+}
+#theme-radio {
+    height: auto;
+    margin-bottom: 1;
+}
+#pref-list {
+    height: 6;
+    margin-bottom: 1;
+}
+#show-sel-btn { margin-bottom: 1; }
+#sel-output { color: $text-muted; }
+
+/* ------ Lists panel ---------------------------------------- */
+
+#nav-list {
+    height: 9;
+    margin-bottom: 1;
+}
+#list-label {
+    color: $text-muted;
+    margin-bottom: 1;
+}
+ListsPanel Tree { height: 18; }
+
+/* ------ Data panel ----------------------------------------- */
+
+#swim-table {
+    height: 14;
+    margin-bottom: 1;
+}
+#rich-log {
+    height: 10;
+    margin-bottom: 1;
+}
+#log-buttons {
+    height: auto;
+    & > Button { margin-right: 1; }
+}
+
+/* ------ Progress panel ------------------------------------- */
+
+#demo-progress { margin-bottom: 1; }
+#progress-btns {
+    height: auto;
+    margin-bottom: 1;
+    & > Button { margin-right: 1; }
+}
+#demo-loader {
+    height: 3;
+    margin-bottom: 1;
+}
+#toggle-row {
+    height: auto;
+    margin-bottom: 1;
+}
+.toggle-col {
+    width: 20;
+    height: auto;
+    padding: 0 1;
+    & > Label {
+        text-style: bold;
+        margin-bottom: 1;
+        color: $text;
+    }
+}
+#demo-toggle {
+    margin-top: 1;
+    margin-bottom: 1;
+}
+
+/* ------ Content panel -------------------------------------- */
+
+#label-row {
+    height: auto;
+    margin-bottom: 1;
+    & > Label {
+        margin-right: 2;
+        padding: 0 1;
+        border: solid $panel;
+        color: $text-muted;
+    }
+}
+ContentPanel Collapsible { margin-bottom: 1; }
+#install-hint {
+    color: $text;
+    text-style: bold;
+    padding: 0 1;
+}
+#demo-markdown {
+    height: auto;
+    border: solid $panel;
+    padding: 1 2;
+    margin-top: 1;
+}
+
+/* ------ Tabs panel ----------------------------------------- */
+
+#demo-tabs {
+    height: 16;
+    border: solid $panel;
+    margin-bottom: 1;
+}
+#switcher-nav {
+    height: auto;
+    margin-bottom: 1;
+    & > Button { margin-right: 1; }
+}
+#demo-switcher {
+    height: 5;
+    border: solid $panel;
+    padding: 1 2;
+    & > Static { height: auto; }
+}
+
+/* ------ Layout panel --------------------------------------- */
+
+#demo-grid-3 {
+    layout: grid;
+    grid-size: 3;
+    grid-gutter: 1;
+    height: 14;
+    margin-bottom: 1;
+}
+#demo-grid-asymm {
+    layout: grid;
+    grid-size: 3;
+    grid-columns: 1fr 2fr 1fr;
+    grid-gutter: 1;
+    height: 5;
+    margin-bottom: 1;
+}
+.grid-cell {
+    height: 4;
+    border: solid $panel;
+    content-align: center middle;
+    text-align: center;
+    color: $text-muted;
+    background: transparent;
+}
+.grid-cell.accent,
+.grid-cell.success {
+    background: $surface;
+    border: solid $panel;
+    color: $text;
+}
+#grid-hint {
+    color: $text-disabled;
+    text-style: italic;
+    margin-bottom: 1;
+}
+#hv-demo {
+    height: 12;
+    border: solid $panel;
+    margin-bottom: 1;
+}
+#v-col-1,
+#v-col-2 {
+    width: 1fr;
+    padding: 1;
+}
+.layout-box {
+    height: 1fr;
+    border: solid $panel;
+    content-align: center middle;
+    text-align: center;
+    margin: 0 0 1 0;
+    color: $text-disabled;
+    background: transparent;
+}
+#placeholder-row {
+    height: 5;
+    & > Placeholder {
+        width: 1fr;
+        margin-right: 1;
+    }
+}
+
+/* ------ Digits panel --------------------------------------- */
+
+#clock-digits {
+    width: auto;
+    margin-bottom: 1;
+    color: $text;
+}
+#counter-digits {
+    width: auto;
+    color: $text-muted;
+    margin-bottom: 1;
+}
+#counter-btns {
+    height: auto;
+    & > Button { margin-right: 1; }
+}
+
+/* ------ Workers panel -------------------------------------- */
+
+#async-btn { margin-bottom: 1; }
+#async-prog { margin-bottom: 1; }
+#async-status {
+    color: $text-muted;
+    margin-bottom: 1;
+}
+#thread-btn { margin-bottom: 1; }
+#thread-log {
+    height: 10;
+    margin-bottom: 1;
+}
+WorkersPanel Input { margin-bottom: 1; }
+#exclusive-result { color: $text-muted; }
+
+/* ------ Modal panel ---------------------------------------- */
+
+ModalPanel Button {
+    margin-right: 1;
+    margin-bottom: 1;
+}
+#modal-result {
+    margin-top: 1;
+    padding: 0 1;
+    border: solid $panel;
+    height: 3;
+    content-align: left middle;
+    color: $text-muted;
+}
+#notify-btns {
+    height: auto;
+    & > Button { margin-right: 1; }
+}
+
+InfoModal,
+ConfirmModal,
+FormModal {
+    align: center middle;
+    background: rgba(0, 0, 0, 0.55);
+}
+#info-modal-box,
+#confirm-modal-box,
+#form-modal-box {
+    width: 58;
+    height: auto;
+    background: $background;
+    border: solid $surface;
+    padding: 2 3;
+}
+#modal-title {
+    text-style: bold;
+    color: $text;
+    text-align: center;
+    margin-bottom: 1;
+}
+#modal-body {
+    height: auto;
+    margin-bottom: 2;
+    color: $text-muted;
+}
+#modal-footer {
+    height: auto;
+    align-horizontal: right;
+    & > Button { margin-left: 1; }
+}
+#form-modal-input { margin-bottom: 2; }
+
+/* ------ Theme panel ---------------------------------------- */
+
+.token-row {
+    height: 3;
+    margin-bottom: 0;
+}
+.token-swatch {
+    width: 1fr;
+    height: 3;
+    content-align: center middle;
+    text-align: center;
+    border: none;
+    color: $text-muted;
+}
+
+/* Flatten all swatches to neutral mono tiles */
+.swatch-primary,
+.swatch-primary-muted,
+.swatch-secondary,
+.swatch-secondary-muted,
+.swatch-accent,
+.swatch-accent-muted,
+.swatch-success,
+.swatch-success-muted,
+.swatch-warning,
+.swatch-warning-muted,
+.swatch-error,
+.swatch-error-muted {
+    background: $panel;
+    color: $text-muted;
+    border: solid $surface;
+}
+
+.swatch-surface     { background: $surface;    color: $text-muted; border: solid $panel; }
+.swatch-panel       { background: $panel;      color: $text-muted; border: solid $surface; }
+.swatch-background  { background: $background; color: $text-muted; border: solid $panel; }
+.swatch-text         { background: $panel; color: $text; }
+.swatch-text-muted   { background: $panel; color: $text-muted; }
+.swatch-text-disabled{ background: $panel; color: $text-disabled; }
+
+#theme-picker {
+    height: 12;
+    margin-top: 1;
+}

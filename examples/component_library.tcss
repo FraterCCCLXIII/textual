@@ -1,0 +1,516 @@
+/* ============================================================
+   Textual Component Library — stylesheet
+   ============================================================ */
+
+/* ------ App shell ----------------------------------------- */
+
+#app-body {
+    height: 1fr;
+}
+
+#main-switcher {
+    width: 1fr;
+    height: 1fr;
+}
+
+/* All section panels scroll independently */
+ButtonsPanel,
+InputsPanel,
+SelectionPanel,
+ListsPanel,
+DataPanel,
+ProgressPanel,
+ContentPanel,
+TabbedPanel,
+LayoutPanel,
+DigitsPanel,
+WorkersPanel,
+ModalPanel,
+ThemePanel {
+    padding: 1 2 2 2;
+    scrollbar-gutter: stable;
+}
+
+/* ------ Sidebar active item ------------------------------- */
+
+Sidebar ListItem.active {
+    background: $primary 30%;
+    border-left: thick $primary;
+}
+
+Sidebar ListItem.active > Label {
+    color: $primary;
+    text-style: bold;
+}
+
+/* ------ Shared helpers ------------------------------------ */
+
+SectionTitle {
+    margin-top: 1;
+}
+
+CodeHint {
+    color: $text-muted;
+    text-style: italic;
+}
+
+/* ------ Buttons panel ------------------------------------- */
+
+#btn-variants {
+    height: auto;
+    margin-bottom: 1;
+    & > Button {
+        margin-right: 1;
+    }
+}
+
+#btn-states {
+    height: auto;
+    margin-bottom: 1;
+    & > Button {
+        margin-right: 1;
+    }
+}
+
+#press-counter {
+    text-style: bold;
+    color: $primary;
+    margin-bottom: 1;
+}
+
+#btn-counter-row {
+    height: auto;
+    & > Button {
+        margin-right: 1;
+    }
+}
+
+/* ------ Inputs panel -------------------------------------- */
+
+InputsPanel Input {
+    margin-bottom: 1;
+}
+
+#input-echo {
+    color: $accent;
+    margin-bottom: 1;
+}
+
+#code-area {
+    height: 10;
+    margin-bottom: 1;
+}
+
+#echo-output {
+    color: $success;
+    margin-top: 1;
+}
+
+/* ------ Selection panel ----------------------------------- */
+
+#fruit-select {
+    margin-bottom: 1;
+    width: 30;
+}
+
+#fruit-label {
+    color: $accent;
+    margin-bottom: 1;
+}
+
+#lang-option-list {
+    height: 7;
+    margin-bottom: 1;
+    border: round $surface;
+}
+
+#option-label {
+    color: $accent;
+    margin-bottom: 1;
+}
+
+#theme-radio {
+    height: auto;
+    margin-bottom: 1;
+}
+
+#pref-list {
+    height: 6;
+    margin-bottom: 1;
+    border: round $surface;
+}
+
+#show-sel-btn {
+    margin-bottom: 1;
+}
+
+#sel-output {
+    color: $success;
+}
+
+/* ------ Lists panel --------------------------------------- */
+
+#nav-list {
+    height: 9;
+    border: round $surface;
+    margin-bottom: 1;
+}
+
+#list-label {
+    color: $accent;
+    margin-bottom: 1;
+}
+
+/* Tree takes remaining space up to a max */
+ListsPanel Tree {
+    height: 18;
+    border: round $surface;
+}
+
+/* ------ Data panel ---------------------------------------- */
+
+#swim-table {
+    height: 14;
+    margin-bottom: 1;
+    border: round $surface;
+}
+
+#rich-log {
+    height: 10;
+    border: round $surface;
+    margin-bottom: 1;
+}
+
+#log-buttons {
+    height: auto;
+    & > Button {
+        margin-right: 1;
+    }
+}
+
+/* ------ Progress panel ------------------------------------ */
+
+#demo-progress {
+    margin-bottom: 1;
+}
+
+#progress-btns {
+    height: auto;
+    margin-bottom: 1;
+    & > Button {
+        margin-right: 1;
+    }
+}
+
+#demo-loader {
+    height: 3;
+    margin-bottom: 1;
+}
+
+#toggle-row {
+    height: auto;
+    margin-bottom: 1;
+}
+
+.toggle-col {
+    width: 20;
+    height: auto;
+    padding: 0 1;
+    & > Label {
+        text-style: bold;
+        margin-bottom: 1;
+    }
+}
+
+#demo-toggle {
+    margin-top: 1;
+    margin-bottom: 1;
+}
+
+/* ------ Content panel ------------------------------------- */
+
+#label-row {
+    height: auto;
+    margin-bottom: 1;
+    & > Label {
+        margin-right: 2;
+        padding: 0 1;
+        border: round $surface;
+    }
+}
+
+ContentPanel Collapsible {
+    margin-bottom: 1;
+}
+
+#install-hint {
+    color: $success;
+    text-style: bold;
+    padding: 0 2;
+}
+
+#demo-markdown {
+    height: auto;
+    border: round $surface;
+    padding: 1 2;
+    margin-top: 1;
+}
+
+/* ------ Tabs panel ---------------------------------------- */
+
+#demo-tabs {
+    height: 16;
+    border: round $surface;
+    margin-bottom: 1;
+}
+
+#switcher-nav {
+    height: auto;
+    margin-bottom: 1;
+    & > Button {
+        margin-right: 1;
+    }
+}
+
+#demo-switcher {
+    height: 5;
+    border: round $surface;
+    padding: 1 2;
+    & > Static {
+        height: auto;
+    }
+}
+
+/* ------ Layout panel -------------------------------------- */
+
+#demo-grid-3 {
+    layout: grid;
+    grid-size: 3;
+    grid-gutter: 1;
+    height: 14;
+    margin-bottom: 1;
+}
+
+#demo-grid-asymm {
+    layout: grid;
+    grid-size: 3;
+    grid-columns: 1fr 2fr 1fr;
+    grid-gutter: 1;
+    height: 5;
+    margin-bottom: 1;
+}
+
+.grid-cell {
+    height: 4;
+    border: round $surface;
+    content-align: center middle;
+    text-align: center;
+    color: $text;
+}
+
+.grid-cell.accent {
+    background: $accent 10%;
+    border: round $accent;
+    color: $accent;
+}
+
+.grid-cell.success {
+    background: $success 10%;
+    border: round $success;
+    color: $success;
+}
+
+#grid-hint {
+    color: $text-muted;
+    text-style: italic;
+    margin-bottom: 1;
+}
+
+#hv-demo {
+    height: 12;
+    border: round $surface;
+    margin-bottom: 1;
+}
+
+#v-col-1,
+#v-col-2 {
+    width: 1fr;
+    padding: 1;
+}
+
+.layout-box {
+    height: 1fr;
+    border: round $primary 40%;
+    content-align: center middle;
+    text-align: center;
+    margin: 0 0 1 0;
+    color: $text-muted;
+}
+
+#placeholder-row {
+    height: 5;
+    & > Placeholder {
+        width: 1fr;
+        margin-right: 1;
+    }
+}
+
+/* ------ Digits panel -------------------------------------- */
+
+#clock-digits {
+    width: auto;
+    margin-bottom: 1;
+    color: $primary;
+}
+
+#counter-digits {
+    width: auto;
+    color: $accent;
+    margin-bottom: 1;
+}
+
+#counter-btns {
+    height: auto;
+    & > Button {
+        margin-right: 1;
+    }
+}
+
+/* ------ Workers panel ------------------------------------- */
+
+#async-btn {
+    margin-bottom: 1;
+}
+
+#async-prog {
+    margin-bottom: 1;
+}
+
+#async-status {
+    color: $text-muted;
+    margin-bottom: 1;
+}
+
+#thread-btn {
+    margin-bottom: 1;
+}
+
+#thread-log {
+    height: 10;
+    border: round $surface;
+    margin-bottom: 1;
+}
+
+WorkersPanel Input {
+    margin-bottom: 1;
+}
+
+#exclusive-result {
+    color: $accent;
+}
+
+/* ------ Modal panel --------------------------------------- */
+
+ModalPanel Button {
+    margin-right: 1;
+    margin-bottom: 1;
+}
+
+#modal-result {
+    margin-top: 1;
+    padding: 0 1;
+    border: round $surface;
+    height: 3;
+    content-align: left middle;
+}
+
+#notify-btns {
+    height: auto;
+    & > Button {
+        margin-right: 1;
+    }
+}
+
+/* Modal dialogs shared styling */
+InfoModal,
+ConfirmModal,
+FormModal {
+    align: center middle;
+}
+
+#info-modal-box,
+#confirm-modal-box,
+#form-modal-box {
+    width: 60;
+    height: auto;
+    max-height: 25;
+    background: $surface;
+    border: round $primary;
+    padding: 2 3;
+}
+
+#modal-title {
+    text-style: bold;
+    color: $primary;
+    text-align: center;
+    margin-bottom: 1;
+}
+
+#modal-body {
+    height: auto;
+    margin-bottom: 2;
+    color: $text;
+}
+
+#modal-footer {
+    height: auto;
+    align-horizontal: right;
+    & > Button {
+        margin-left: 1;
+    }
+}
+
+#form-modal-input {
+    margin-bottom: 2;
+}
+
+/* ------ Theme panel --------------------------------------- */
+
+.token-row {
+    height: 3;
+    margin-bottom: 0;
+}
+
+.token-swatch {
+    width: 1fr;
+    height: 3;
+    content-align: center middle;
+    text-align: center;
+    border: none;
+}
+
+/* Token swatch backgrounds — use design tokens directly */
+.swatch-primary         { background: $primary;          color: $background; text-style: bold; }
+.swatch-primary-muted   { background: $primary-muted;    color: $text; }
+.swatch-secondary       { background: $secondary;        color: $background; text-style: bold; }
+.swatch-secondary-muted { background: $secondary-muted;  color: $text; }
+.swatch-accent          { background: $accent;           color: $background; text-style: bold; }
+.swatch-accent-muted    { background: $accent-muted;     color: $text; }
+.swatch-success         { background: $success;          color: $background; text-style: bold; }
+.swatch-success-muted   { background: $success-muted;    color: $text; }
+.swatch-warning         { background: $warning;          color: $background; text-style: bold; }
+.swatch-warning-muted   { background: $warning-muted;    color: $text; }
+.swatch-error           { background: $error;            color: $background; text-style: bold; }
+.swatch-error-muted     { background: $error-muted;      color: $text; }
+.swatch-surface         { background: $surface;          color: $text; border: round $primary; }
+.swatch-panel           { background: $panel;            color: $text; border: round $primary; }
+.swatch-background      { background: $background;       color: $text; border: round $primary; }
+.swatch-text            { background: $panel;            color: $text; }
+.swatch-text-muted      { background: $panel;            color: $text-muted; }
+.swatch-text-disabled   { background: $panel;            color: $text-disabled; }
+
+#theme-picker {
+    height: 12;
+    margin-top: 1;
+    border: round $surface;
+}
